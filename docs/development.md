@@ -18,6 +18,21 @@ pio run -e esp32       # or: pio run  (builds every env in platformio.ini)
 pio run -e esp8266
 ```
 
+## Running the unit tests
+
+```bash
+pio test -e native
+```
+
+Runs `test/test_ringmath` — 10 host-side tests against
+`src/util/RingMath.h`, the pure ring-buffer index arithmetic behind
+`CircularLog`. No board required; this is the one piece of Phase 1's logic
+that's decoupled enough from Arduino/FS to test off-device. See
+[test/README.md](../test/README.md) for what is (and deliberately isn't)
+covered this way, and `native`'s `[env:native]` block in `platformio.ini`
+for why it overrides every `[env]` default (it must not pull in the Arduino
+framework or ESP-only `lib_deps`).
+
 ## Filesystem image (dashboard)
 
 The dashboard lives in `data/` and is packaged into a separate LittleFS
@@ -91,9 +106,11 @@ for the read-only-vs-mutating split Phase 1 uses.
 
 Phase 1 was built and verified by compiling both PlatformIO environments to
 completion (`pio run -e esp32` / `-e esp8266`, both `SUCCESS`) and building
-the LittleFS filesystem image for both. It has **not** been flash-verified
-on physical hardware as part of this delivery — there was no ESP32/ESP8266
-board attached to build this on. Before relying on it:
+the LittleFS filesystem image for both. The one piece of actual logic that
+gets automatically tested is `src/util/RingMath.h` via `pio test -e native`
+(see above) — everything else is compiled but not exercised. It has **not**
+been flash-verified on physical hardware as part of this delivery — there
+was no ESP32/ESP8266 board attached to build this on. Before relying on it:
 
 1. Flash both a real ESP32 and ESP8266 board and run through
    [README.md](../README.md)'s Quick Start end-to-end.

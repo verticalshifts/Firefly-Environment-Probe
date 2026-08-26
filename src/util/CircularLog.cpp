@@ -1,6 +1,7 @@
 #include "CircularLog.h"
 #include "hardware/FSCompat.h"
 #include "Logger.h"
+#include "RingMath.h"
 
 CircularLog::CircularLog(const char *path, size_t recordSize, uint32_t maxRecords)
     : path_(path), recordSize_(recordSize), maxRecords_(maxRecords) {}
@@ -76,8 +77,9 @@ bool CircularLog::append(const void *data) {
     f.write(reinterpret_cast<const uint8_t *>(data), recordSize_);
     f.close();
 
-    writeIndex_ = (writeIndex_ + 1) % maxRecords_;
-    if (count_ < maxRecords_) count_++;
+    ringmath::AppendResult next = ringmath::afterAppend(count_, writeIndex_, maxRecords_);
+    count_ = next.count;
+    writeIndex_ = next.writeIndex;
 
     return writeHeader();
 }
@@ -89,12 +91,12 @@ uint32_t CircularLog::readRecent(void *out, uint32_t maxOut) {
     if (!f) return 0;
 
     uint32_t n = count_ < maxOut ? count_ : maxOut;
-    // Oldest of the records we're returning:
-    uint32_t startSlot = (writeIndex_ + maxRecords_ - n) % maxRecords_;
+    // Oldest logical index among the n most recent records:
+    uint32_t oldestLogicalIndex = count_ - n;
 
     uint8_t *dst = reinterpret_cast<uint8_t *>(out);
     for (uint32_t i = 0; i < n; i++) {
-        uint32_t slot = (startSlot + i) % maxRecords_;
+        uint32_t slot = ringmath::slotForLogicalIndex(oldestLogicalIndex + i, count_, writeIndex_, maxRecords_);
         size_t offset = headerBytes() + (size_t)slot * recordSize_;
         f.seek(offset);
         f.read(dst + (size_t)i * recordSize_, recordSize_);
@@ -106,22 +108,18 @@ uint32_t CircularLog::readRecent(void *out, uint32_t maxOut) {
 uint32_t CircularLog::readRecentDownsampled(uint32_t desiredRecent, uint32_t maxOutputPoints, void *out) {
     if (!ready_ || count_ == 0 || maxOutputPoints == 0) return 0;
 
-    uint32_t matchCount = desiredRecent < count_ ? desiredRecent : count_;
-    if (matchCount == 0) return 0;
-
-    uint32_t stride = matchCount / maxOutputPoints;
-    if (stride < 1) stride = 1;
+    ringmath::DownsamplePlan plan = ringmath::planDownsample(desiredRecent, count_, maxOutputPoints);
+    if (plan.matchCount == 0) return 0;
 
     File f = LittleFS.open(path_, "r");
     if (!f) return 0;
 
-    uint32_t oldestWantedLogicalIndex = count_ - matchCount; // 0 = oldest ever stored
     uint8_t *dst = reinterpret_cast<uint8_t *>(out);
     uint32_t outCount = 0;
 
-    for (uint32_t i = 0; i < matchCount && outCount < maxOutputPoints; i += stride) {
-        uint32_t logicalIndex = oldestWantedLogicalIndex + i;
-        uint32_t slot = (writeIndex_ + maxRecords_ - count_ + logicalIndex) % maxRecords_;
+    for (uint32_t i = 0; i < plan.matchCount && outCount < maxOutputPoints; i += plan.stride) {
+        uint32_t logicalIndex = plan.oldestWantedLogicalIndex + i;
+        uint32_t slot = ringmath::slotForLogicalIndex(logicalIndex, count_, writeIndex_, maxRecords_);
         size_t offset = headerBytes() + (size_t)slot * recordSize_;
         f.seek(offset);
         f.read(dst + (size_t)outCount * recordSize_, recordSize_);
