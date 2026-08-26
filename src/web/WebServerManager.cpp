@@ -93,6 +93,7 @@ String WebServerManager::contentTypeFor(const String &path) {
     if (path.endsWith(".json")) return "application/json";
     if (path.endsWith(".svg")) return "image/svg+xml";
     if (path.endsWith(".ico")) return "image/x-icon";
+    if (path.endsWith(".png")) return "image/png";
     return "text/plain";
 }
 

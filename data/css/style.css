@@ -76,6 +76,12 @@ a:hover { text-decoration: underline; }
   background: var(--healthy);
 }
 
+.app-header .title .brand-mark {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
 nav.tabs {
   display: flex;
   gap: 4px;
@@ -359,6 +365,13 @@ button.secondary {
   padding: 28px 26px;
   width: 100%;
   max-width: 420px;
+}
+
+.setup-logo {
+  height: 40px;
+  width: auto;
+  display: block;
+  margin: 0 0 16px;
 }
 
 .setup-card h1 {

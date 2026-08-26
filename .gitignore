@@ -7,3 +7,4 @@
 .vscode/ipch
 *.bin
 .impeccable/
+.DS_Store
