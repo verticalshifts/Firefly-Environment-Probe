@@ -10,6 +10,7 @@
 
 #include <Arduino.h>
 #include "storage/StorageManager.h"
+#include "storage/AppPaths.h"
 
 struct DeviceConfig {
     uint16_t configVersion = CONFIG_SCHEMA_VERSION;
@@ -87,7 +88,7 @@ public:
     // expose credentials through GET APIs).
     void toJson(JsonDocument &doc, bool redactSecrets) const;
 
-    static constexpr const char *CONFIG_PATH = "/config.json";
+    static constexpr const char *CONFIG_PATH = paths::CONFIG;
 
 private:
     StorageManager &storage_;

@@ -1,6 +1,7 @@
 #include "StorageManager.h"
 #include "hardware/FSCompat.h"
 #include "util/Logger.h"
+#include "AppPaths.h"
 
 static const char *TAG = "Storage";
 
@@ -80,8 +81,15 @@ uint32_t StorageManager::usedBytes() {
 }
 
 bool StorageManager::wipeAll() {
-    Logger::warn(TAG, "Wiping all stored data (factory reset)");
-    bool ok = LittleFS.format();
-    fscompat::begin();
-    return ok;
+    Logger::warn(TAG, "Wiping config/device-state/history (factory reset)");
+
+    // Best-effort: a fresh/never-fully-booted device may be missing one of
+    // these (e.g. history was never begin()'d), which isn't a failure.
+    LittleFS.remove(paths::CONFIG);
+    LittleFS.remove(String(paths::CONFIG) + ".tmp"); // leftover from an interrupted atomic write
+    LittleFS.remove(paths::DEVICE_STATE);
+    LittleFS.remove(paths::ENV_HISTORY);
+    LittleFS.rmdir("/history"); // harmless no-op if not empty or absent
+
+    return true;
 }

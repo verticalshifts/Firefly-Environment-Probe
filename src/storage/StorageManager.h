@@ -24,7 +24,12 @@ public:
     uint32_t totalBytes();
     uint32_t usedBytes();
 
-    // Removes every file this firmware owns and reformats the filesystem.
-    // Used by factory reset (section 27).
+    // Removes config, device state, and history (see AppPaths.h) — the
+    // runtime-written data a factory reset is meant to clear. Deliberately
+    // does NOT format the filesystem: the static dashboard files under /,
+    // /css/, /js/ (uploaded via `pio run -t uploadfs`) are not regenerated
+    // by the firmware, so wiping them would leave the device serving
+    // "file missing" instead of the provisioning page. Used by factory
+    // reset (section 27).
     bool wipeAll();
 };

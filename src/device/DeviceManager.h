@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include "config/ConfigManager.h"
 #include "storage/StorageManager.h"
+#include "storage/AppPaths.h"
 
 // Normalized internal data model (section 32).
 struct DeviceStatus {
@@ -46,7 +47,7 @@ private:
     uint32_t bootCount_ = 0;
     bool freshPasswordGenerated_ = false;
 
-    static constexpr const char *DEVICE_STATE_PATH = "/device.json";
+    static constexpr const char *DEVICE_STATE_PATH = paths::DEVICE_STATE;
 
     String deriveDeviceId();
     String generatePassword(uint8_t length);

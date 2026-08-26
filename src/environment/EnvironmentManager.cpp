@@ -1,13 +1,14 @@
 #include "EnvironmentManager.h"
 #include "DHTSensor.h"
 #include "hardware/HardwareConfig.h"
+#include "storage/AppPaths.h"
 #include "util/Logger.h"
 
 static const char *TAG = "Environment";
 
 EnvironmentManager::EnvironmentManager(ConfigManager &config)
     : config_(config),
-      history_("/history/env.bin", sizeof(EnvHistoryPoint), hw::HISTORY_MAX_RECORDS) {}
+      history_(paths::ENV_HISTORY, sizeof(EnvHistoryPoint), hw::HISTORY_MAX_RECORDS) {}
 
 void EnvironmentManager::createSensor() {
     const DeviceConfig &c = config_.get();
