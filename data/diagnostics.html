@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostics — Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="title"><span class="dot"></span> Environment &amp; Network Probe</div>
+  <nav class="tabs">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="environment.html">Environment</a>
+    <a href="network.html">Network</a>
+    <a href="diagnostics.html">Diagnostics</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Diagnostics</h1>
+  <div class="section-title">Device</div>
+  <div class="table-wrap card">
+    <table id="deviceTable">
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Wi-Fi</div>
+  <div class="table-wrap card">
+    <table id="wifiTable">
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Sensor</div>
+  <div class="table-wrap card">
+    <table id="sensorTable">
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Recent Activity</div>
+  <div class="card">
+    <div class="hint">Recent log lines are visible on the device's serial console (115200 baud). This panel shows the latest values captured by the API.</div>
+  </div>
+
+  <div class="actions-row" style="margin-top:20px;">
+    <button class="secondary" id="exportBtn">Export Diagnostics</button>
+    <button class="secondary" id="restartBtn">Restart</button>
+    <button class="danger" id="factoryResetBtn">Factory Reset</button>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script src="js/diagnostics.js"></script>
+</body>
+</html>

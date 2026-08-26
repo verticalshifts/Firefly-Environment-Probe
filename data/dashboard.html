@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="title"><span class="dot" id="hdrDot"></span> <span id="hdrName">Environment &amp; Network Probe</span></div>
+  <nav class="tabs">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="environment.html">Environment</a>
+    <a href="network.html">Network</a>
+    <a href="diagnostics.html">Diagnostics</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Dashboard</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>Temperature</h2>
+      <div class="metric" id="mTemp">— <small>°C</small></div>
+      <div class="metric-sub" id="mTempSub">&nbsp;</div>
+    </div>
+    <div class="card">
+      <h2>Humidity</h2>
+      <div class="metric" id="mHum">— <small>%RH</small></div>
+      <div class="metric-sub" id="mHumSub">&nbsp;</div>
+    </div>
+    <div class="card">
+      <h2>Device</h2>
+      <div class="metric" id="mDevice" style="font-size:var(--fs-heading);">—</div>
+      <div class="metric-sub" id="mDeviceSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="section-title">Network Health</div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Target</th><th>Status</th><th>Latency</th><th>Loss</th></tr></thead>
+        <tbody id="netRows">
+          <tr><td colspan="4" class="hint">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section-title">Environment History</div>
+  <div class="card">
+    <canvas class="chart" id="miniChart"></canvas>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>

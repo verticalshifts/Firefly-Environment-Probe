@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environment — Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="title"><span class="dot" id="hdrDot"></span> Environment &amp; Network Probe</div>
+  <nav class="tabs">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="environment.html">Environment</a>
+    <a href="network.html">Network</a>
+    <a href="diagnostics.html">Diagnostics</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Environment</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>Current Temperature</h2>
+      <div class="metric" id="mTemp">— <small>°C</small></div>
+    </div>
+    <div class="card">
+      <h2>Current Humidity</h2>
+      <div class="metric" id="mHum">— <small>%RH</small></div>
+    </div>
+    <div class="card">
+      <h2>Sensor</h2>
+      <div class="metric" id="mSensor" style="font-size:var(--fs-heading);">—</div>
+      <div class="metric-sub" id="mSensorSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <div class="section-title">History</div>
+  <div class="card">
+    <div class="range-picker" id="rangePicker">
+      <button data-range="1h" class="active">1 Hour</button>
+      <button data-range="6h">6 Hours</button>
+      <button data-range="24h">24 Hours</button>
+      <button data-range="7d">7 Days</button>
+    </div>
+    <canvas class="chart" id="tempChart"></canvas>
+    <div class="section-title" style="margin-top:20px;">Humidity</div>
+    <canvas class="chart" id="humChart"></canvas>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/environment.js"></script>
+</body>
+</html>

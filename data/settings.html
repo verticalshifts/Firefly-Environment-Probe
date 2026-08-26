@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="title"><span class="dot"></span> Environment &amp; Network Probe</div>
+  <nav class="tabs">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="environment.html">Environment</a>
+    <a href="network.html">Network</a>
+    <a href="diagnostics.html">Diagnostics</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Settings</h1>
+  <p class="hint">Changes to Wi-Fi credentials or sensor type apply immediately after saving. Settings require the dashboard username/password (your browser will prompt once).</p>
+
+  <form class="settings-form" id="settingsForm">
+    <fieldset>
+      <legend>Device</legend>
+      <div class="field"><label for="deviceName">Device Name</label><input id="deviceName" name="deviceName"></div>
+      <div class="field"><label for="mdnsHostname">mDNS Hostname (blank = derived from name)</label><input id="mdnsHostname" name="mdnsHostname" placeholder="envprobe"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Wi-Fi</legend>
+      <div class="field"><label for="wifiSsid">SSID</label><input id="wifiSsid" name="wifiSsid"></div>
+      <div class="field"><label for="wifiPassword">Password (leave blank to keep current)</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field">
+        <label><input type="checkbox" id="useStaticIp" name="useStaticIp" style="width:auto;display:inline-block;"> Use static IP</label>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="staticIp">IP Address</label><input id="staticIp" name="staticIp"></div>
+        <div class="field"><label for="staticGateway">Gateway</label><input id="staticGateway" name="staticGateway"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="staticSubnet">Subnet</label><input id="staticSubnet" name="staticSubnet"></div>
+        <div class="field"><label for="staticDns">DNS</label><input id="staticDns" name="staticDns"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Dashboard Login</legend>
+      <div class="field"><label for="authUsername">Username</label><input id="authUsername" name="authUsername"></div>
+      <div class="field"><label for="authPassword">Password (leave blank to keep current)</label><input id="authPassword" name="authPassword" type="password"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sensor</legend>
+      <div class="field-row">
+        <div class="field">
+          <label for="sensorType">Sensor Type</label>
+          <select id="sensorType" name="sensorType">
+            <option value="DHT11">DHT11</option>
+            <option value="DHT22">DHT22</option>
+          </select>
+        </div>
+        <div class="field"><label for="sensorGpio">Data GPIO</label><input id="sensorGpio" name="sensorGpio" type="number" min="0" max="39"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sampling Intervals (seconds)</legend>
+      <div class="field-row">
+        <div class="field"><label for="environmentInterval">Environment</label><input id="environmentInterval" name="environmentInterval" type="number" min="2" max="3600"></div>
+        <div class="field"><label for="networkInterval">Network Probe</label><input id="networkInterval" name="networkInterval" type="number" min="5" max="3600"></div>
+      </div>
+      <div class="field"><label for="dashboardRefresh">Dashboard Refresh</label><input id="dashboardRefresh" name="dashboardRefresh" type="number" min="1" max="300"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Network Monitoring</legend>
+      <div class="field"><label for="gatewayTarget">Gateway (blank = use DHCP gateway)</label><input id="gatewayTarget" name="gatewayTarget" placeholder="192.168.1.1"></div>
+      <div class="field-row">
+        <div class="field"><label for="pingTarget1">Probe Target 1</label><input id="pingTarget1" name="pingTarget1"></div>
+        <div class="field"><label for="pingTarget2">Probe Target 2</label><input id="pingTarget2" name="pingTarget2"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="dnsDomain">DNS Domain</label><input id="dnsDomain" name="dnsDomain"></div>
+        <div class="field"><label for="httpTarget">HTTP/HTTPS URL</label><input id="httpTarget" name="httpTarget"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="probeTimeoutMs">Probe Timeout (ms)</label><input id="probeTimeoutMs" name="probeTimeoutMs" type="number" min="200" max="10000"></div>
+        <div class="field"><label for="probePacketCount">Packet Count</label><input id="probePacketCount" name="probePacketCount" type="number" min="1" max="20"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Alert Thresholds</legend>
+      <div class="field-row">
+        <div class="field"><label for="tempHighC">Temperature High (°C)</label><input id="tempHighC" name="tempHighC" type="number" step="0.1"></div>
+        <div class="field"><label for="tempLowC">Temperature Low (°C)</label><input id="tempLowC" name="tempLowC" type="number" step="0.1"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="humidityHighPct">Humidity High (%)</label><input id="humidityHighPct" name="humidityHighPct" type="number" step="0.1"></div>
+        <div class="field"><label for="humidityLowPct">Humidity Low (%)</label><input id="humidityLowPct" name="humidityLowPct" type="number" step="0.1"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="rssiLowDbm">Wi-Fi RSSI Low (dBm)</label><input id="rssiLowDbm" name="rssiLowDbm" type="number"></div>
+        <div class="field"><label for="latencyHighMs">Latency High (ms)</label><input id="latencyHighMs" name="latencyHighMs" type="number" step="0.1"></div>
+      </div>
+      <div class="field"><label for="packetLossHighPct">Packet Loss High (%)</label><input id="packetLossHighPct" name="packetLossHighPct" type="number" step="0.1"></div>
+    </fieldset>
+
+    <div class="actions-row">
+      <button type="submit" class="primary">Save Settings</button>
+    </div>
+  </form>
+
+  <div class="section-title">Firmware</div>
+  <div class="card">
+    <p class="hint">Current firmware: <span id="fwVersion">—</span> on <span id="fwPlatform">—</span></p>
+    <input type="file" id="otaFile" accept=".bin">
+    <div class="actions-row">
+      <button class="primary" id="otaUploadBtn">Upload Firmware</button>
+    </div>
+    <p class="hint" id="otaStatus"></p>
+  </div>
+
+  <div class="section-title">Danger Zone</div>
+  <div class="card">
+    <div class="actions-row">
+      <button class="secondary" id="restartBtn">Restart Device</button>
+      <button class="danger" id="factoryResetBtn">Factory Reset</button>
+    </div>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script src="js/settings.js"></script>
+</body>
+</html>

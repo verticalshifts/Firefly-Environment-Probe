@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network — Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <div class="title"><span class="dot" id="hdrDot"></span> Environment &amp; Network Probe</div>
+  <nav class="tabs">
+    <a href="dashboard.html">Dashboard</a>
+    <a href="environment.html">Environment</a>
+    <a href="network.html">Network</a>
+    <a href="diagnostics.html">Diagnostics</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+</header>
+
+<main>
+  <h1 class="page-title">Network</h1>
+  <div class="section-title">Wi-Fi</div>
+  <div class="grid">
+    <div class="card"><h2>SSID</h2><div class="metric" id="wSsid" style="font-size:var(--fs-hero);">—</div></div>
+    <div class="card"><h2>IP Address</h2><div class="metric" id="wIp" style="font-size:var(--fs-hero);">—</div></div>
+    <div class="card"><h2>RSSI</h2><div class="metric" id="wRssi" style="font-size:var(--fs-hero);">—</div></div>
+    <div class="card"><h2>Gateway</h2><div class="metric" id="wGw" style="font-size:var(--fs-heading);">—</div></div>
+    <div class="card"><h2>Channel</h2><div class="metric" id="wChan" style="font-size:var(--fs-heading);">—</div></div>
+    <div class="card"><h2>Reconnects</h2><div class="metric" id="wRecon" style="font-size:var(--fs-heading);">—</div></div>
+  </div>
+
+  <div class="section-title">Ground Probe</div>
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Target</th><th>Address</th><th>Status</th><th>Latency</th><th>Loss</th><th>Last Probe</th></tr></thead>
+        <tbody id="probeRows"><tr><td colspan="6" class="hint">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="js/common.js"></script>
+<script src="js/network.js"></script>
+</body>
+</html>

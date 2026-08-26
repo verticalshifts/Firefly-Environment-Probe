@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup — Environment &amp; Network Probe</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="center-page">
+  <div class="setup-card">
+    <h1>Set up your Environment Probe</h1>
+    <p class="hint">Device <span id="deviceId">—</span>. Connect it to your Wi-Fi network to finish setup.</p>
+
+    <div class="card" id="credsCard" style="margin-bottom:18px; display:none;">
+      <h2>Dashboard Login</h2>
+      <p class="hint">A password was generated for this device. Save it now — you'll need it to change settings later.</p>
+      <div class="metric" style="font-size:var(--fs-heading);" id="genUser">—</div>
+      <div class="metric" style="font-size:var(--fs-heading);" id="genPass">—</div>
+    </div>
+
+    <form class="settings-form" id="provisionForm">
+      <div class="field"><label for="deviceName">Device Name</label><input id="deviceName" name="deviceName" placeholder="Server Room Probe"></div>
+      <div class="field"><label for="wifiSsid">Wi-Fi SSID</label><input id="wifiSsid" name="wifiSsid" required></div>
+      <div class="field"><label for="wifiPassword">Wi-Fi Password</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+
+      <div class="field">
+        <label for="sensorType">Sensor Type</label>
+        <select id="sensorType" name="sensorType">
+          <option value="DHT22">DHT22</option>
+          <option value="DHT11">DHT11</option>
+        </select>
+      </div>
+
+      <details>
+        <summary class="hint" style="cursor:pointer;">Advanced network probe settings</summary>
+        <div class="field" style="margin-top:12px;"><label for="gatewayTarget">Gateway (blank = use DHCP gateway)</label><input id="gatewayTarget" name="gatewayTarget"></div>
+        <div class="field-row">
+          <div class="field"><label for="pingTarget1">Probe Target 1</label><input id="pingTarget1" name="pingTarget1" placeholder="8.8.8.8"></div>
+          <div class="field"><label for="pingTarget2">Probe Target 2</label><input id="pingTarget2" name="pingTarget2" placeholder="1.1.1.1"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="dnsDomain">DNS Domain</label><input id="dnsDomain" name="dnsDomain" placeholder="google.com"></div>
+          <div class="field"><label for="httpTarget">HTTP/HTTPS URL</label><input id="httpTarget" name="httpTarget" placeholder="https://example.com"></div>
+        </div>
+      </details>
+
+      <button type="submit" class="primary">Connect</button>
+      <p class="hint" id="formStatus">&nbsp;</p>
+    </form>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script src="js/provision.js"></script>
+</body>
+</html>
