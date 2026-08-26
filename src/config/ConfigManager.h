@@ -61,6 +61,14 @@ struct DeviceConfig {
     int rssiLowDbm = -80;
     float latencyHighMs = 100.0f;
     float packetLossHighPct = 10.0f;
+
+    // GEN2 Bullseye integration (Phase 2 seam — opt-in, disabled by default;
+    // see docs/architecture.md's "Phase 2 boundary" and Gen2Telemetry.h)
+    bool gen2Enabled = false;
+    String gen2OrgId = "";
+    String gen2LicenseKey = "";   // secret — redacted in toJson(redactSecrets=true)
+    String gen2MonitorName = ""; // blank = falls back to deviceName
+    uint32_t gen2IntervalS = 60; // min HTTPS POST spacing to GEN2, independent of environmentIntervalS
 };
 
 class ConfigManager {

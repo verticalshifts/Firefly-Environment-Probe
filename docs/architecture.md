@@ -146,13 +146,27 @@ network). See `docs/api.md`.
 ## Phase 2 boundary
 
 `src/telemetry/TelemetryProvider.h` is the seam Phase 2 (GEN2 Bullseye
-integration) is meant to fill. Phase 1 ships one implementation,
+integration) is meant to fill. Phase 1 shipped one implementation,
 `LocalTelemetry`, which is close to a no-op: `EnvironmentManager` and
 `NetworkProbe` already persist/hold their own data directly, so there's
 nothing further for Phase 1's "publish" step to do. `TelemetryProvider`
-exists purely so Phase 2 can add `Gen2Telemetry` — device registration,
-cloud publish, remote config, cloud alerts — as a second implementation,
-without modifying environment, network, storage, or dashboard code.
+exists so a second implementation — `Gen2Telemetry`, covering GEN2
+environment publishing — can be added (and now has been, for environment
+data; network/device-status publishing remain unimplemented, see
+`Gen2Telemetry`'s own header) without modifying environment, network,
+storage, or dashboard code.
 
-Nothing in Phase 1 imports, links against, or calls out to any GEN2
-endpoint, by design.
+Phase 1 shipped with nothing importing, linking against, or calling out to
+any GEN2 endpoint, by design. That boundary has since been deliberately,
+explicitly crossed once: `src/telemetry/Gen2Telemetry.h/.cpp` is a second
+`TelemetryProvider` implementation that POSTs environment (temperature/
+humidity) readings to GEN2 Bullseye's live `groundprobe` endpoint. It is
+opt-in and disabled by default (`gen2Enabled = false`) — a device with
+default config still makes zero GEN2 calls, unchanged. This is not a
+Phase 1 architectural violation; it's Phase 2's first increment, added
+early and additively (a second `TelemetryProvider` alongside
+`LocalTelemetry`, per the seam above) rather than as a wholesale Phase 2
+cutover — see `docs/configuration.md`'s GEN2 fields for what it does and
+doesn't send, and note today that GEN2's own backend doesn't yet persist
+or display the temperature/humidity fields this sends (a known,
+intentional gap on GEN2's side, not this firmware's).

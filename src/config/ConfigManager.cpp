@@ -78,6 +78,12 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.latencyHighMs = doc["latencyHighMs"] | c.latencyHighMs;
     c.packetLossHighPct = doc["packetLossHighPct"] | c.packetLossHighPct;
 
+    c.gen2Enabled = doc["gen2Enabled"] | c.gen2Enabled;
+    c.gen2OrgId = doc["gen2OrgId"] | c.gen2OrgId;
+    c.gen2LicenseKey = doc["gen2LicenseKey"] | c.gen2LicenseKey;
+    c.gen2MonitorName = doc["gen2MonitorName"] | c.gen2MonitorName;
+    c.gen2IntervalS = doc["gen2IntervalS"] | c.gen2IntervalS;
+
     config_ = c;
 }
 
@@ -122,6 +128,12 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     doc["rssiLowDbm"] = c.rssiLowDbm;
     doc["latencyHighMs"] = c.latencyHighMs;
     doc["packetLossHighPct"] = c.packetLossHighPct;
+
+    doc["gen2Enabled"] = c.gen2Enabled;
+    doc["gen2OrgId"] = c.gen2OrgId;
+    if (!redactSecrets) doc["gen2LicenseKey"] = c.gen2LicenseKey;
+    doc["gen2MonitorName"] = c.gen2MonitorName;
+    doc["gen2IntervalS"] = c.gen2IntervalS;
 }
 
 bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
@@ -147,6 +159,10 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
     }
     if (c.authUsername.length() == 0) {
         errorOut = "authUsername cannot be empty";
+        return false;
+    }
+    if (c.gen2IntervalS < 30 || c.gen2IntervalS > 3600) {
+        errorOut = "gen2IntervalS out of range (30-3600s)";
         return false;
     }
     return true;
@@ -193,6 +209,14 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     if (updates["rssiLowDbm"].is<int>()) c.rssiLowDbm = updates["rssiLowDbm"];
     if (updates["latencyHighMs"].is<float>()) c.latencyHighMs = updates["latencyHighMs"];
     if (updates["packetLossHighPct"].is<float>()) c.packetLossHighPct = updates["packetLossHighPct"];
+
+    if (updates["gen2Enabled"].is<bool>()) c.gen2Enabled = updates["gen2Enabled"];
+    if (updates["gen2OrgId"].is<const char *>()) c.gen2OrgId = updates["gen2OrgId"].as<String>();
+    if (updates["gen2LicenseKey"].is<const char *>() && updates["gen2LicenseKey"].as<String>().length() > 0) {
+        c.gen2LicenseKey = updates["gen2LicenseKey"].as<String>();
+    }
+    if (updates["gen2MonitorName"].is<const char *>()) c.gen2MonitorName = updates["gen2MonitorName"].as<String>();
+    if (updates["gen2IntervalS"].is<unsigned int>()) c.gen2IntervalS = updates["gen2IntervalS"];
 
     if (!validate(c, errorOut)) {
         return false;

@@ -45,6 +45,39 @@ migration step in `ConfigManager::begin()`.
 | `rssiLowDbm` | int | `-80` | Wi-Fi signal alert threshold |
 | `latencyHighMs` | float | `100.0` | Probe latency alert threshold |
 | `packetLossHighPct` | float | `10.0` | Probe packet-loss alert threshold |
+| `gen2Enabled` | bool | `false` | Opt-in — publishes environment readings to GEN2 Bullseye when true |
+| `gen2OrgId` | string | `""` | GEN2 org UUID, from GEN2's dashboard |
+| `gen2LicenseKey` | string | `""` | Secret, format `gp_<32 hex chars>` from GEN2's Onboarding tab; never returned by `GET /api/config` |
+| `gen2MonitorName` | string | `""` | Blank = uses `deviceName`; GEN2 auto-creates a monitor with this name on first successful publish |
+| `gen2IntervalS` | int (seconds) | `60` | Minimum spacing between GEN2 HTTPS POSTs, independent of `environmentInterval`; validated to 30–3600 |
+
+## GEN2 Bullseye integration
+
+When `gen2Enabled` is true, environment readings (temperature/humidity) are
+POSTed to GEN2 Bullseye's `https://g2i.batbapps.com/groundprobe` endpoint at
+most once every `gen2IntervalS` seconds (default 60s), independent of the
+sensor's own `environmentInterval` (default 10s). `status` sent is `"UP"`
+when the sensor reading is valid, `"DOWN"` otherwise, so GEN2 will correctly
+alert on sustained DHT sensor failure, not just network loss.
+
+`gen2OrgId` and `gen2LicenseKey` come from GEN2's own dashboard (Onboarding
+tab, admin-only — there's no self-service device-registration API on GEN2's
+side) — not from this device. `gen2MonitorName` (blank = device name)
+auto-creates a new monitor row in that org on first successful publish if
+the name doesn't already exist there.
+
+**As of this writing, GEN2 Bullseye's backend does not persist or display
+`temperature`/`humidity`** — its `/groundprobe` endpoint has a fixed field
+list and silently drops anything else. This firmware sends them anyway
+(intentional future-proofing, confirmed with the user); they'll start
+showing up in the GEN2 dashboard once GEN2's backend is separately extended
+to accept them. Until then, enabling this gets you GEN2 uptime
+alerting/monitor tracking for the device (via `status`), but not
+temperature/humidity charts on GEN2's side.
+
+The connection is TLS-verified against a pinned `ISRG Root X1` root
+certificate (see `src/hardware/Gen2RootCA.h`) — not `setInsecure()` — since
+this POST carries the secret `gen2LicenseKey`.
 
 ## Validation
 
@@ -54,6 +87,7 @@ migration step in `ConfigManager::begin()`.
 - `environmentInterval` / `networkInterval` / `dashboardRefresh` /
   `probePacketCount` are outside the ranges in the table above
 - `authUsername` would be left empty
+- `gen2IntervalS` is outside 30–3600s
 
 Everything else is accepted as-is — e.g. there's no per-platform GPIO
 allowlist enforced server-side, so double-check

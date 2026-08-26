@@ -110,6 +110,18 @@
       <div class="field"><label for="packetLossHighPct">Packet Loss High (%)</label><input id="packetLossHighPct" name="packetLossHighPct" type="number" step="0.1"></div>
     </fieldset>
 
+    <fieldset>
+      <legend>GEN2 Bullseye Integration</legend>
+      <p class="hint">Optional: publish environment readings to your GEN2 Bullseye account for cloud monitoring and alerting. Requires an Org ID and License Key generated from GEN2's dashboard (Onboarding tab, admin-only).</p>
+      <div class="field">
+        <label><input type="checkbox" id="gen2Enabled" name="gen2Enabled" style="width:auto;display:inline-block;"> Enable GEN2 publishing</label>
+      </div>
+      <div class="field"><label for="gen2OrgId">Org ID</label><input id="gen2OrgId" name="gen2OrgId"></div>
+      <div class="field"><label for="gen2LicenseKey">License Key (leave blank to keep current)</label><input id="gen2LicenseKey" name="gen2LicenseKey" type="password"></div>
+      <div class="field"><label for="gen2MonitorName">Monitor Name (blank = use Device Name)</label><input id="gen2MonitorName" name="gen2MonitorName"></div>
+      <div class="field"><label for="gen2IntervalS">Post Interval (seconds)</label><input id="gen2IntervalS" name="gen2IntervalS" type="number" min="30" max="3600"></div>
+    </fieldset>
+
     <div class="actions-row">
       <button type="submit" class="primary">Save Settings</button>
     </div>

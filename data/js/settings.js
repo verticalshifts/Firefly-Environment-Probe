@@ -3,7 +3,7 @@ const numericFields = new Set([
   "sensorGpio", "environmentInterval", "networkInterval", "dashboardRefresh",
   "probeTimeoutMs", "probePacketCount", "rssiLowDbm",
   "tempHighC", "tempLowC", "humidityHighPct", "humidityLowPct",
-  "latencyHighMs", "packetLossHighPct",
+  "latencyHighMs", "packetLossHighPct", "gen2IntervalS",
 ]);
 
 async function loadConfig() {

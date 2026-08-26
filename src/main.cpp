@@ -9,6 +9,7 @@
 #include "device/DeviceManager.h"
 #include "web/WebServerManager.h"
 #include "telemetry/LocalTelemetry.h"
+#include "telemetry/Gen2Telemetry.h"
 #include "util/Logger.h"
 
 // -----------------------------------------------------------------------------
@@ -25,6 +26,7 @@ NetworkProbe networkProbe(configManager, network);
 DeviceManager device(storage, configManager);
 WebServerManager webServer(configManager, environment, network, networkProbe, device, storage);
 LocalTelemetry telemetry; // Phase 1 stand-in for the future Gen2Telemetry adapter
+Gen2Telemetry gen2Telemetry(configManager, network, device); // opt-in, disabled by default (gen2Enabled)
 
 static const char *TAG = "Main";
 
@@ -79,6 +81,12 @@ void loop() {
 
     network.loop();
     environment.loop();
+
+    if (environment.status() != EnvironmentStatus::NOT_YET_READ) {
+        telemetry.publishEnvironment(environment.current(), environment.sensorType());
+        gen2Telemetry.publishEnvironment(environment.current(), environment.sensorType());
+    }
+
     networkProbe.loop();
     webServer.loop();
     checkFactoryResetButton();

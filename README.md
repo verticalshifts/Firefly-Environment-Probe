@@ -7,9 +7,10 @@ network (gateway, two IP targets, DNS, HTTP/HTTPS), stores bounded history
 locally, and serves its own dashboard and REST API — no cloud, no app,
 nothing external required.
 
-This is **Phase 1**. It is deliberately independent of
-[GEN2 Bullseye](../GEN2BULLSEYE) (the Phase 2 cloud platform) — see
-[Phase 2: GEN2 integration plan](#phase-2-gen2-integration-plan).
+This is **Phase 1**, plus an early, opt-in slice of Phase 2 — see
+[Phase 2: GEN2 integration plan](#phase-2-gen2-integration-plan). With GEN2
+publishing disabled (the default), it remains fully independent of
+[GEN2 Bullseye](../GEN2BULLSEYE).
 
 ## 1. What it does
 
@@ -201,24 +202,36 @@ budget approach that keeps this working on ESP8266's much smaller RAM/flash.
 
 ## 11. Phase 2: GEN2 integration plan
 
-Phase 1 intentionally has **no GEN2 Bullseye dependency** — no GEN2 API
-calls, auth, cloud telemetry, alerts, or remote configuration. What it does
-have, on purpose, is a clean seam for Phase 2 to plug into without touching
-this phase's code:
+Phase 1 shipped with **no GEN2 Bullseye dependency** — no GEN2 API calls,
+auth, cloud telemetry, alerts, or remote configuration. What it had, on
+purpose, was a clean seam for Phase 2 to plug into without touching Phase
+1's code: `src/telemetry/TelemetryProvider.h`, normalized data models
+(`EnvironmentReading`, `NetworkProbeResult`, `DeviceStatus`), and a REST
+API/config schema that already looked like what a telemetry adapter would
+consume.
 
-- `src/telemetry/TelemetryProvider.h` — an interface Phase 1 already
-  implements once, as `LocalTelemetry` (a near no-op, since local storage
-  already happens directly in `EnvironmentManager`/`NetworkProbe`).
-- Normalized data models (`EnvironmentReading`, `NetworkProbeResult`,
-  `DeviceStatus`) already decoupled from the DHT library, WiFi APIs, and
-  any specific transport.
-- A REST API and config schema that already look like what a device
-  registration / telemetry adapter would consume.
+That seam has since been filled in, additively, for environment data:
+`Gen2Telemetry` (`src/telemetry/Gen2Telemetry.h/.cpp`) is a second
+`TelemetryProvider` implementation that POSTs temperature/humidity readings
+to GEN2 Bullseye's live `https://g2i.batbapps.com/groundprobe` endpoint,
+alongside the existing `LocalTelemetry`. It is **opt-in and disabled by
+default** (`gen2Enabled = false` in config) — enable it from **Settings →
+GEN2 Bullseye Integration** with an Org ID and License Key from your GEN2
+dashboard (Onboarding tab). See [docs/configuration.md](docs/configuration.md)
+for the full field list.
 
-Phase 2 adds a `Gen2Telemetry` implementation of `TelemetryProvider` (device
-registration, cloud publish of environment/network/device data, remote
-config, cloud alerts) alongside `LocalTelemetry` — without changing the
-environment, network, storage, or dashboard layers here.
+**Known gap on GEN2's side**: as of this writing, GEN2 Bullseye's own
+backend doesn't persist or display `temperature`/`humidity` — its
+`/groundprobe` endpoint has a fixed field list and silently drops anything
+else. This firmware sends them anyway (confirmed deliberate); they'll
+appear on GEN2's dashboard once GEN2's backend is separately extended to
+accept them. Until then, enabling this gets device UP/DOWN monitoring on
+GEN2 (via the `status` field, driven by sensor health), not
+temperature/humidity charts there.
+
+Still out of scope: network-probe publishing, device-status/registration
+publishing, remote config, and cloud alerts sourced from GEN2 rather than
+this device's own local thresholds.
 
 ## Project layout
 
