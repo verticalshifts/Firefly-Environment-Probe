@@ -24,13 +24,20 @@
       <div class="field"><label for="wifiSsid">Wi-Fi SSID</label><input id="wifiSsid" name="wifiSsid" required></div>
       <div class="field"><label for="wifiPassword">Wi-Fi Password</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
 
-      <div class="field">
-        <label for="sensorType">Sensor Type</label>
-        <select id="sensorType" name="sensorType">
-          <option value="DHT22">DHT22</option>
-          <option value="DHT11">DHT11</option>
-        </select>
+      <div class="field-row">
+        <div class="field">
+          <label for="sensorType">Sensor Type</label>
+          <select id="sensorType" name="sensorType">
+            <option value="DHT22">DHT22</option>
+            <option value="DHT11">DHT11</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sensorGpio">Sensor Data GPIO</label>
+          <input id="sensorGpio" name="sensorGpio" type="number" min="0" max="39" placeholder="4">
+        </div>
       </div>
+      <p class="hint">GPIO number, not the board's silkscreen "D" label (e.g. NodeMCU's D2 is GPIO4). Leave blank for the platform default. See docs/hardware.md for safe GPIOs.</p>
 
       <details>
         <summary class="hint" style="cursor:pointer;">Advanced network probe settings</summary>

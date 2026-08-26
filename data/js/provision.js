@@ -10,12 +10,18 @@ async function loadInfo() {
   }
 }
 
+const numericFields = new Set(["sensorGpio"]);
+
 document.getElementById("provisionForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("formStatus");
   const payload = {};
   Array.from(e.target.elements).forEach((el) => {
-    if (el.name && el.value !== "") payload[el.name] = el.value;
+    if (!el.name || el.value === "") return;
+    // ConfigManager::update() checks JSON types strictly (e.g. sensorGpio
+    // must arrive as a number, not the string a plain form field gives you)
+    // — see settings.js's numericFields for the same reasoning.
+    payload[el.name] = numericFields.has(el.name) ? Number(el.value) : el.value;
   });
 
   statusEl.textContent = "Connecting…";

@@ -369,6 +369,8 @@ void WebServerManager::handleProvisionSave() {
         return;
     }
 
+    bool sensorChanged = doc["sensorType"].is<const char *>() || doc["sensorGpio"].is<int>();
+
     String err;
     if (!config_.update(doc.as<JsonObjectConst>(), err)) {
         sendError(400, err);
@@ -380,6 +382,12 @@ void WebServerManager::handleProvisionSave() {
     resp["deviceId"] = device_.getDeviceId();
     sendJson(200, resp);
 
+    // The sensor was already begin()'d in setup() with whatever was in
+    // config at boot (defaults, on first provisioning) — apply a
+    // sensorType/sensorGpio change from the setup page immediately rather
+    // than leaving the live sensor misconfigured until a reboot happens to
+    // occur. Mirrors handleApiConfigPost()'s handling of the same fields.
+    if (sensorChanged) environment_.reconfigure();
     network_.applyNewCredentials();
 }
 
