@@ -14,6 +14,10 @@ static const byte DNS_PORT = 53;
 NetworkManager::NetworkManager(ConfigManager &config) : config_(config) {}
 
 String NetworkManager::deriveApSsid() {
+    if (strlen(hw::AP_SSID_OVERRIDE) > 0) {
+        return String(hw::AP_SSID_OVERRIDE);
+    }
+
 #if defined(PLATFORM_ESP32)
     uint64_t mac = ESP.getEfuseMac();
     char suffix[7];

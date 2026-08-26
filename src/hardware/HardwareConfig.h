@@ -72,4 +72,16 @@ constexpr uint32_t HISTORY_MAX_RECORDS = 10080;
 constexpr uint32_t HISTORY_MAX_RECORDS = 2880;
 #endif
 
+// Provisioning AP SSID override (section 12). The general-purpose default
+// is "ENVPROBE-<chip-id-suffix>" (see NetworkManager::deriveApSsid), which
+// guarantees every device gets a unique setup-AP name with zero
+// configuration — the right default for a codebase meant to be flashed
+// onto many identical units.
+//
+// Set this to a non-empty literal to use that exact SSID instead, for a
+// specific, already-identified physical unit. Reset to "" to go back to
+// auto chip-ID naming (e.g. before flashing a different unit from this
+// same codebase).
+constexpr const char *AP_SSID_OVERRIDE = "Firefly-ENV-W01";
+
 } // namespace hw
