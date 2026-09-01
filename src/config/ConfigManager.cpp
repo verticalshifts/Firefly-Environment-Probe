@@ -79,6 +79,7 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.packetLossHighPct = doc["packetLossHighPct"] | c.packetLossHighPct;
 
     c.gen2Enabled = doc["gen2Enabled"] | c.gen2Enabled;
+    c.gen2ServerUrl = doc["gen2ServerUrl"] | c.gen2ServerUrl;
     c.gen2OrgId = doc["gen2OrgId"] | c.gen2OrgId;
     c.gen2LicenseKey = doc["gen2LicenseKey"] | c.gen2LicenseKey;
     c.gen2MonitorName = doc["gen2MonitorName"] | c.gen2MonitorName;
@@ -130,6 +131,7 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     doc["packetLossHighPct"] = c.packetLossHighPct;
 
     doc["gen2Enabled"] = c.gen2Enabled;
+    doc["gen2ServerUrl"] = c.gen2ServerUrl;
     doc["gen2OrgId"] = c.gen2OrgId;
     if (!redactSecrets) doc["gen2LicenseKey"] = c.gen2LicenseKey;
     doc["gen2MonitorName"] = c.gen2MonitorName;
@@ -163,6 +165,10 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
     }
     if (c.gen2IntervalS < 30 || c.gen2IntervalS > 3600) {
         errorOut = "gen2IntervalS out of range (30-3600s)";
+        return false;
+    }
+    if (c.gen2ServerUrl.length() == 0) {
+        errorOut = "gen2ServerUrl cannot be empty";
         return false;
     }
     return true;
@@ -211,6 +217,9 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     if (updates["packetLossHighPct"].is<float>()) c.packetLossHighPct = updates["packetLossHighPct"];
 
     if (updates["gen2Enabled"].is<bool>()) c.gen2Enabled = updates["gen2Enabled"];
+    if (updates["gen2ServerUrl"].is<const char *>() && updates["gen2ServerUrl"].as<String>().length() > 0) {
+        c.gen2ServerUrl = updates["gen2ServerUrl"].as<String>();
+    }
     if (updates["gen2OrgId"].is<const char *>()) c.gen2OrgId = updates["gen2OrgId"].as<String>();
     if (updates["gen2LicenseKey"].is<const char *>() && updates["gen2LicenseKey"].as<String>().length() > 0) {
         c.gen2LicenseKey = updates["gen2LicenseKey"].as<String>();

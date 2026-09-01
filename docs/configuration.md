@@ -39,13 +39,14 @@ migration step in `ConfigManager::begin()`.
 | `dnsDomain` | string | `"google.com"` | Domain resolved to test DNS |
 | `httpTarget` | string | `"https://example.com"` | `http://` or `https://` URL |
 | `probeTimeoutMs` | int | `1500` | Per-probe timeout |
-| `probePacketCount` | int | `5` | Ping attempts per gateway/IP-target probe cycle; validated to 1–20 |
+| `probePacketCount` | int | `1` | Ping attempts per gateway/IP-target probe cycle; validated to 1–20. Each attempt blocks `loop()` for ~1s (standard ping pacing) — raising this raises that stall proportionally, and since Gateway/Target1/Target2 share one interval and become due together, they cascade back-to-back (confirmed live: `5` meant ~15s of combined stalling every `networkInterval`, enough to cause real packet loss to the device itself) |
 | `tempHighC` / `tempLowC` | float | `35.0` / `10.0` | Environment alert thresholds |
 | `humidityHighPct` / `humidityLowPct` | float | `80.0` / `30.0` | |
 | `rssiLowDbm` | int | `-80` | Wi-Fi signal alert threshold |
 | `latencyHighMs` | float | `100.0` | Probe latency alert threshold |
 | `packetLossHighPct` | float | `10.0` | Probe packet-loss alert threshold |
 | `gen2Enabled` | bool | `false` | Opt-in — publishes environment readings to GEN2 Bullseye when true |
+| `gen2ServerUrl` | string | `"https://gen2bullseye.com"` | GEN2 host to publish to; firmware always appends `/api/groundprobe`. Cannot be blank |
 | `gen2OrgId` | string | `""` | GEN2 org UUID, from GEN2's dashboard |
 | `gen2LicenseKey` | string | `""` | Secret, format `gp_<32 hex chars>` from GEN2's Onboarding tab; never returned by `GET /api/config` |
 | `gen2MonitorName` | string | `""` | Blank = uses `deviceName`; GEN2 auto-creates a monitor with this name on first successful publish |
@@ -54,11 +55,18 @@ migration step in `ConfigManager::begin()`.
 ## GEN2 Bullseye integration
 
 When `gen2Enabled` is true, environment readings (temperature/humidity) are
-POSTed to GEN2 Bullseye's `https://g2i.batbapps.com/groundprobe` endpoint at
-most once every `gen2IntervalS` seconds (default 60s), independent of the
-sensor's own `environmentInterval` (default 10s). `status` sent is `"UP"`
-when the sensor reading is valid, `"DOWN"` otherwise, so GEN2 will correctly
-alert on sustained DHT sensor failure, not just network loss.
+POSTed to `<gen2ServerUrl>/api/groundprobe` at most once every
+`gen2IntervalS` seconds (default 60s), independent of the sensor's own
+`environmentInterval` (default 10s). `status` sent is `"UP"` when the
+sensor reading is valid, `"DOWN"` otherwise, so GEN2 will correctly alert on
+sustained DHT sensor failure, not just network loss.
+
+`gen2ServerUrl` defaults to `https://gen2bullseye.com` but can be pointed at
+any GEN2 host (e.g. `https://g2i.batbapps.com`) — the firmware always
+appends the fixed `/api/groundprobe` path itself; only the host is
+configurable, and it's the one path confirmed to resolve correctly on
+every GEN2 host tested (a bare `/groundprobe` only works on some of them —
+on others it falls through to the web app's own HTML instead of the API).
 
 `gen2OrgId` and `gen2LicenseKey` come from GEN2's own dashboard (Onboarding
 tab, admin-only — there's no self-service device-registration API on GEN2's
@@ -66,18 +74,20 @@ side) — not from this device. `gen2MonitorName` (blank = device name)
 auto-creates a new monitor row in that org on first successful publish if
 the name doesn't already exist there.
 
-**As of this writing, GEN2 Bullseye's backend does not persist or display
-`temperature`/`humidity`** — its `/groundprobe` endpoint has a fixed field
-list and silently drops anything else. This firmware sends them anyway
-(intentional future-proofing, confirmed with the user); they'll start
-showing up in the GEN2 dashboard once GEN2's backend is separately extended
-to accept them. Until then, enabling this gets you GEN2 uptime
-alerting/monitor tracking for the device (via `status`), but not
-temperature/humidity charts on GEN2's side.
+`temperature`/`humidity` are accepted by `/groundprobe` (as aliases for
+`temperature_c`/`humidity_pct`) and stored correctly, but only render on
+GEN2's dashboard on that specific monitor's own detail/history page — not
+on the general monitor list/card view, which never shows them regardless of
+whether the data arrived.
 
-The connection is TLS-verified against a pinned `ISRG Root X1` root
-certificate (see `src/hardware/Gen2RootCA.h`) — not `setInsecure()` — since
-this POST carries the secret `gen2LicenseKey`.
+**The connection uses `setInsecure()` — TLS is not certificate-verified**,
+even though this POST carries the secret `gen2LicenseKey`. This was a
+deliberate tradeoff, not an oversight: the pinned-root approach tried first
+required verifying an RSA-4096 chain, which took ~12s of CPU-bound
+signature-verification time on the ESP8266 and blocked the whole firmware
+long enough to cause measurable WiFi packet loss (confirmed live). See
+`src/telemetry/Gen2Telemetry.h`'s header comment for the full reasoning and
+what it would take to revisit this.
 
 ## Validation
 
@@ -88,6 +98,9 @@ this POST carries the secret `gen2LicenseKey`.
   `probePacketCount` are outside the ranges in the table above
 - `authUsername` would be left empty
 - `gen2IntervalS` is outside 30–3600s
+- `gen2ServerUrl` would be left empty (a blank submission is silently
+  ignored instead, keeping the current value — same convention as
+  `gen2LicenseKey`)
 
 Everything else is accepted as-is — e.g. there's no per-platform GPIO
 allowlist enforced server-side, so double-check

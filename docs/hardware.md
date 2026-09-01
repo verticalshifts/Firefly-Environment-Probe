@@ -81,6 +81,44 @@ Phase 1 doesn't currently drive this LED from firmware (kept out per
 "don't over-engineer" — it's a config constant in `hardware/HardwareConfig.h`
 ready for a future status-blink feature, not wired to anything yet).
 
+## Temperature-indicator LED
+
+An external LED wired to `hw::DEFAULT_TEMP_LED_GPIO` (GPIO14 on both
+platforms — D5 on ESP8266 silkscreens) gives an at-a-glance physical read of
+the current temperature band, driven non-blocking by
+`hardware/TemperatureIndicator.cpp` from `EnvironmentManager`'s current
+reading:
+
+| Temperature | Pattern |
+|---|---|
+| < 20°C | 1s on / 10s off |
+| 20°C – <28°C | 2s on / 1s off |
+| ≥ 28°C | Steady on |
+
+While no valid reading is available yet (boot, or `SENSOR_ERROR`), the LED
+is held off rather than showing a stale/misleading pattern.
+
+Wiring assumes a standard external LED (anode → GPIO, cathode → GND), so
+GPIO HIGH lights it. If wired the other way (LED to 3.3V, GPIO sinks it),
+flip the polarity in `TemperatureIndicator::setLed()`.
+
+**Brightness/dimming is platform-specific** — on ESP32, `analogWrite()`
+drives real hardware PWM (LEDC) and `LED_BRIGHTNESS` in
+`TemperatureIndicator.cpp` dims it safely. **On ESP8266 the LED is always
+full brightness**, driven by plain `digitalWrite()`: ESP8266 has no
+hardware PWM, and `analogWrite()` there is a software timer-interrupt
+waveform generator that was confirmed, live, to cause WiFi packet loss on
+this board when used for this LED — reverted for that reason, not a
+stopgap.
+
+**Use a series resistor** (typically 220–1k ohm for a 3.3V-supplied
+indicator LED, exact value depends on the LED's forward voltage/rated
+current) — without one, the LED runs at whatever current the GPIO + LED
+happen to settle at unregulated, which is usually well past the LED's rated
+current. On ESP8266 this is now the *only* safe way to both protect the
+LED/GPIO and reduce brightness (a higher-value resistor directly reduces
+DC current, with no PWM/WiFi tradeoff involved).
+
 ## Flash partitioning
 
 - **ESP32** uses the `min_spiffs.csv` partition table: two ~1.9MB OTA app

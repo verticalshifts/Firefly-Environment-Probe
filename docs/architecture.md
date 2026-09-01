@@ -42,6 +42,7 @@ hardware/                    hardware abstraction layer (HAL)
   HardwareConfig.h                    per-platform pin/constant defaults
   FSCompat.h                          LittleFS.begin() differences
   PingCompat.h                        ESP32Ping vs ESP8266Ping differences
+  TemperatureIndicator                non-blocking temperature-band LED driver
 
 util/
   Logger                        lightweight Serial + in-RAM ring logging
@@ -87,9 +88,22 @@ none of the Arduino/lwIP APIs for these on either platform offer a fully
 async surface without adding an async networking library. The mitigation is
 architectural, not a `delay()`: `NetworkProbe::loop()` runs *one* probe per
 call and returns, so a stall is bounded to that single probe's timeout
-(a low number of seconds at worst) rather than all probes serialized
-back-to-back — and the web server, sensor loop, and Wi-Fi maintenance all
-still get a turn between probes.
+rather than all probes serialized back-to-back within one call — and the
+web server, sensor loop, and Wi-Fi maintenance do get a turn between
+probes.
+
+**In practice that turn can be too brief to matter**, though: Gateway,
+Probe Target 1, and Probe Target 2 all share `networkIntervalS`, so they
+become "due" at the same wall-clock moment and — since each one's own
+blocking duration is what makes the *next* one's turn arrive — end up
+running essentially back-to-back anyway, with the intervening loop()
+passes taking negligible real time by comparison. Confirmed live: at
+`probePacketCount = 5` (ping's standard ~1s/packet pacing), that's ~5s
+*each*, ~15s combined, recurring every `networkIntervalS` — long enough to
+starve WiFi servicing and cause real packet loss to the device itself, not
+just a probe UI number. `probePacketCount` is the practical lever on this
+(default lowered to `1` — ~1s per probe, ~3s combined — for exactly this
+reason); see [configuration.md](configuration.md).
 
 The one intentional blocking call outside `loop()` is the **first** Wi-Fi
 connection attempt in `NetworkManager::begin()` — during `setup()`, before
@@ -125,6 +139,12 @@ keep both platforms comfortably under budget:
   dependency pulled in; it's used with `setInsecure()` because the probe's
   job is reachability/latency, not certificate trust — see
   [api.md](api.md) for the HTTP/HTTPS probe's exact semantics.
+- `Gen2Telemetry` also uses `setInsecure()`, for a different reason: this
+  chip's software TLS stack verifying an RSA-4096 chain took ~12s of
+  CPU-bound work, long enough to cause real WiFi packet loss elsewhere in
+  the firmware while it ran. See `src/telemetry/Gen2Telemetry.h`'s header
+  comment for the tradeoff this accepts (the secret `gen2LicenseKey` is no
+  longer protected against a network-path MITM).
 
 ## Auth model
 
@@ -160,13 +180,15 @@ Phase 1 shipped with nothing importing, linking against, or calling out to
 any GEN2 endpoint, by design. That boundary has since been deliberately,
 explicitly crossed once: `src/telemetry/Gen2Telemetry.h/.cpp` is a second
 `TelemetryProvider` implementation that POSTs environment (temperature/
-humidity) readings to GEN2 Bullseye's live `groundprobe` endpoint. It is
+humidity) readings to a GEN2 Bullseye host's `/api/groundprobe` endpoint —
+the host is configurable (`gen2ServerUrl`, default
+`https://gen2bullseye.com`), the path is fixed. It is
 opt-in and disabled by default (`gen2Enabled = false`) — a device with
 default config still makes zero GEN2 calls, unchanged. This is not a
 Phase 1 architectural violation; it's Phase 2's first increment, added
 early and additively (a second `TelemetryProvider` alongside
 `LocalTelemetry`, per the seam above) rather than as a wholesale Phase 2
 cutover — see `docs/configuration.md`'s GEN2 fields for what it does and
-doesn't send, and note today that GEN2's own backend doesn't yet persist
-or display the temperature/humidity fields this sends (a known,
-intentional gap on GEN2's side, not this firmware's).
+doesn't send. GEN2's backend does persist `temperature`/`humidity`, but
+only renders them on a monitor's own detail/history page, not the general
+monitor list — see `docs/configuration.md`'s GEN2 section.

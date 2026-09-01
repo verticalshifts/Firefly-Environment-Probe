@@ -10,6 +10,7 @@
 #include "web/WebServerManager.h"
 #include "telemetry/LocalTelemetry.h"
 #include "telemetry/Gen2Telemetry.h"
+#include "hardware/TemperatureIndicator.h"
 #include "util/Logger.h"
 
 // -----------------------------------------------------------------------------
@@ -27,6 +28,7 @@ DeviceManager device(storage, configManager);
 WebServerManager webServer(configManager, environment, network, networkProbe, device, storage);
 LocalTelemetry telemetry; // Phase 1 stand-in for the future Gen2Telemetry adapter
 Gen2Telemetry gen2Telemetry(configManager, network, device); // opt-in, disabled by default (gen2Enabled)
+TemperatureIndicator tempLed(hw::DEFAULT_TEMP_LED_GPIO);
 
 static const char *TAG = "Main";
 
@@ -71,6 +73,7 @@ void setup() {
     environment.begin();
     network.begin();
     webServer.begin();
+    tempLed.begin();
 
     PlatformManager::enableWatchdog(15000);
     Logger::info(TAG, "Setup complete. Device ID " + device.getDeviceId());
@@ -81,6 +84,8 @@ void loop() {
 
     network.loop();
     environment.loop();
+
+    tempLed.loop(environment.current().temperature, environment.status() == EnvironmentStatus::OK);
 
     if (environment.status() != EnvironmentStatus::NOT_YET_READ) {
         telemetry.publishEnvironment(environment.current(), environment.sensorType());

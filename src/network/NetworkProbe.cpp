@@ -14,6 +14,21 @@ using SecureClient = BearSSL::WiFiClientSecure;
 
 static const char *TAG = "NetworkProbe";
 
+#if defined(PLATFORM_ESP8266)
+// Bare host (scheme/path/port stripped) for probeMaxFragmentLength(), which
+// takes a hostname, not a URL. Same idiom as Gen2Telemetry.cpp.
+static String extractHost(const String &url) {
+    String host = url;
+    int schemeEnd = host.indexOf("://");
+    if (schemeEnd >= 0) host = host.substring(schemeEnd + 3);
+    int pathStart = host.indexOf('/');
+    if (pathStart >= 0) host = host.substring(0, pathStart);
+    int portStart = host.indexOf(':');
+    if (portStart >= 0) host = host.substring(0, portStart);
+    return host;
+}
+#endif
+
 NetworkProbe::NetworkProbe(ConfigManager &config, NetworkManager &network)
     : config_(config), network_(network) {
     results_[(uint8_t)ProbeId::GATEWAY].label = "Gateway";
@@ -43,6 +58,10 @@ void NetworkProbe::loop() {
 
 void NetworkProbe::runProbe(ProbeId id) {
     NetworkProbeResult &r = results_[(uint8_t)id];
+    unsigned long wallStart = millis(); // wraps whichever probe fn's own
+                                         // internal timing, for a
+                                         // diagnostic view of how long each
+                                         // probe type actually blocks loop()
     switch (id) {
         case ProbeId::GATEWAY: probeGateway(r); break;
         case ProbeId::PING_1:  probePing(r, config_.get().pingTarget1); break;
@@ -53,6 +72,13 @@ void NetworkProbe::runProbe(ProbeId id) {
     }
     r.everRun = true;
     r.timestamp = millis() / 1000;
+
+    unsigned long wallElapsed = millis() - wallStart;
+    if (wallElapsed > 1000) {
+        // Any single probe blocking loop() for over a second is worth
+        // knowing about — this is what starves WiFi/webserver servicing.
+        Logger::info(TAG, r.label + " probe blocked loop() for " + String(wallElapsed) + "ms");
+    }
 }
 
 void NetworkProbe::probeGateway(NetworkProbeResult &r) {
@@ -119,6 +145,18 @@ void NetworkProbe::probeHttp(NetworkProbeResult &r) {
         SecureClient client;
         client.setInsecure(); // Phase 1: reachability/latency check only, not a
                                // certificate-trust decision — see docs/architecture.md.
+#if defined(PLATFORM_ESP8266)
+        // Same fix as Gen2Telemetry.cpp: BearSSL::WiFiClientSecure defaults
+        // to a 16KB+512B buffer, too large a contiguous allocation for this
+        // device's small free heap to reliably (or quickly) satisfy against
+        // an arbitrary user-configured HTTPS target — confirmed live to
+        // cause multi-second stalls (and consequent WiFi packet loss
+        // elsewhere) on this exact probe, recurring every networkIntervalS.
+        // Negotiate a smaller buffer via MFLN when the target supports it.
+        if (SecureClient::probeMaxFragmentLength(extractHost(url), 443, 1024)) {
+            client.setBufferSizes(1024, 512);
+        }
+#endif
         if (http.begin(client, url)) {
             httpCode = http.GET();
         }

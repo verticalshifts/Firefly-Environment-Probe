@@ -51,7 +51,13 @@ struct DeviceConfig {
     String dnsDomain = "google.com";
     String httpTarget = "https://example.com";
     uint32_t probeTimeoutMs = 1500;
-    uint8_t probePacketCount = 5;
+    // Each ping-based probe (Gateway, Probe Target 1/2) blocks loop() for
+    // roughly this many seconds (standard ~1s/packet pacing) — confirmed
+    // live that 5 packets meant ~5s per probe, ~15s combined across all
+    // three back-to-back (they share one interval, so all become "due"
+    // together), enough to starve WiFi servicing and cause real ping
+    // packet loss to the device itself. 1 keeps each probe to ~1s.
+    uint8_t probePacketCount = 1;
 
     // Alert thresholds (section 35)
     float tempHighC = 35.0f;
@@ -65,6 +71,7 @@ struct DeviceConfig {
     // GEN2 Bullseye integration (Phase 2 seam — opt-in, disabled by default;
     // see docs/architecture.md's "Phase 2 boundary" and Gen2Telemetry.h)
     bool gen2Enabled = false;
+    String gen2ServerUrl = "https://gen2bullseye.com"; // host only — firmware appends /api/groundprobe
     String gen2OrgId = "";
     String gen2LicenseKey = "";   // secret — redacted in toJson(redactSecrets=true)
     String gen2MonitorName = ""; // blank = falls back to deviceName

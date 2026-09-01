@@ -213,21 +213,22 @@ consume.
 That seam has since been filled in, additively, for environment data:
 `Gen2Telemetry` (`src/telemetry/Gen2Telemetry.h/.cpp`) is a second
 `TelemetryProvider` implementation that POSTs temperature/humidity readings
-to GEN2 Bullseye's live `https://g2i.batbapps.com/groundprobe` endpoint,
-alongside the existing `LocalTelemetry`. It is **opt-in and disabled by
-default** (`gen2Enabled = false` in config) — enable it from **Settings →
-GEN2 Bullseye Integration** with an Org ID and License Key from your GEN2
+to a GEN2 Bullseye host's `/api/groundprobe` endpoint, alongside the
+existing `LocalTelemetry`. The host is configurable (`gen2ServerUrl`,
+default `https://gen2bullseye.com`) — the firmware always appends the fixed
+`/api/groundprobe` path itself. It is **opt-in and disabled by default**
+(`gen2Enabled = false` in config) — enable it from **Settings → GEN2
+Bullseye Integration** with an Org ID and License Key from your GEN2
 dashboard (Onboarding tab). See [docs/configuration.md](docs/configuration.md)
 for the full field list.
 
-**Known gap on GEN2's side**: as of this writing, GEN2 Bullseye's own
-backend doesn't persist or display `temperature`/`humidity` — its
-`/groundprobe` endpoint has a fixed field list and silently drops anything
-else. This firmware sends them anyway (confirmed deliberate); they'll
-appear on GEN2's dashboard once GEN2's backend is separately extended to
-accept them. Until then, enabling this gets device UP/DOWN monitoring on
-GEN2 (via the `status` field, driven by sensor health), not
-temperature/humidity charts there.
+**Note on GEN2's dashboard**: `temperature`/`humidity` are accepted and
+stored by GEN2's `/groundprobe` endpoint, but only render on that specific
+monitor's own detail/history page — not the general monitor list/card
+view, which doesn't show them regardless. See
+[docs/configuration.md](docs/configuration.md) for details, including the
+TLS tradeoff `Gen2Telemetry` makes (`setInsecure()` — see that doc and
+`src/telemetry/Gen2Telemetry.h` for why).
 
 Still out of scope: network-probe publishing, device-status/registration
 publishing, remote config, and cloud alerts sourced from GEN2 rather than

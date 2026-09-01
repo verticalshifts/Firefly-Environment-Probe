@@ -3,21 +3,38 @@
 // Gen2Telemetry.h
 //
 // TelemetryProvider implementation that POSTs environment (temperature/
-// humidity) readings to GEN2 Bullseye's live groundprobe endpoint
-// (https://g2i.batbapps.com/groundprobe). Opt-in via config (`gen2Enabled`,
-// default false) — a device with default config still makes zero GEN2
-// calls, so Phase 1's original "no GEN2 dependency" property holds for
-// anyone who doesn't turn this on. See docs/architecture.md's "Phase 2
-// boundary" section for the full story.
+// humidity) readings to GEN2 Bullseye's groundprobe endpoint at
+// `<gen2ServerUrl>/api/groundprobe` — the host is user-configurable
+// (`gen2ServerUrl`, default https://gen2bullseye.com), the `/api/groundprobe`
+// path is fixed (the one path confirmed to resolve on every GEN2 host seen
+// so far). Opt-in via config (`gen2Enabled`, default false) — a device with
+// default config still makes zero GEN2 calls, so Phase 1's original "no
+// GEN2 dependency" property holds for anyone who doesn't turn this on. See
+// docs/architecture.md's "Phase 2 boundary" section for the full story.
 //
-// publishNetwork()/publishDeviceStatus() are deliberately no-ops: GEN2's
-// groundprobe endpoint has no temperature/humidity support server-side
-// today (confirmed by reading GEN2's own server/routes.ts and
-// server/storage.ts), let alone a distinct network-probe or device-status
-// shape — only environment telemetry is in scope here. Any extra JSON keys
-// this sends (temperature/humidity) are currently silently dropped by
-// GEN2's backend; that's intentional future-proofing on the firmware side,
-// not a bug — see docs/configuration.md.
+// TLS uses setInsecure() — no certificate verification — despite this POST
+// carrying a secret license key. This was a deliberate change, not an
+// oversight: pinning GEN2's root CA (tried first) meant verifying an
+// RSA-4096 chain, which took ~12.4s of CPU-bound signature-verification
+// time on this chip and blocked loop() long enough to cause measurable WiFi
+// packet loss (confirmed live: ICMP ping timeouts lined up exactly with
+// that window). The tradeoff accepted here: a MITM on the network path
+// could intercept gen2LicenseKey undetected. Reconsider if GEN2 ever
+// exposes a faster (e.g. ECDSA-chain) host, or if this firmware moves to
+// ESP32 (which has hardware RSA/SHA acceleration and would likely not hit
+// this — untested, no ESP32 board was available to confirm) — see
+// Gen2Telemetry.cpp for the exact setInsecure() call site.
+//
+// `latency_ms` is measured as a separate, bare TCP connect to the
+// configured host — not the secure POST's own duration — since that
+// duration is dominated by on-device certificate-verification CPU time
+// (seconds, for an RSA-4096 chain, on this CPU) rather than real network
+// latency; sending the POST's own duration was showing up as false "high
+// latency" alerts on GEN2. See measureNetworkLatency() in the .cpp.
+//
+// publishNetwork()/publishDeviceStatus() are deliberately no-ops — only
+// environment telemetry (temperature/humidity, which GEN2's `/groundprobe`
+// accepts as aliases for `temperature_c`/`humidity_pct`) is in scope here.
 // -----------------------------------------------------------------------------
 
 #include "TelemetryProvider.h"
@@ -41,7 +58,6 @@ private:
     DeviceManager &device_;
 
     unsigned long lastPostMs_ = 0;
-    float lastLatencyMs_ = 0.0f; // RTT of the *previous* GEN2 POST — see .cpp
 
     bool postEnvironment(const EnvironmentReading &reading);
 };
