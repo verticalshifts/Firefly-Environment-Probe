@@ -32,6 +32,13 @@ const Probe = {
     return Number(value).toFixed(digits === undefined ? 1 : digits);
   },
 
+  // Resolves a CSS custom property to its computed value (e.g. "#33c17a"),
+  // so JS-drawn canvas/SVG stays in sync with the design tokens in style.css
+  // instead of duplicating hex codes.
+  cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  },
+
   age(seconds) {
     if (seconds === null || seconds === undefined) return "—";
     if (seconds < 60) return seconds + "s ago";

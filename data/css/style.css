@@ -123,6 +123,7 @@ main {
   border: 1px solid var(--panel-border);
   border-radius: var(--radius);
   padding: 16px 18px;
+  position: relative; /* anchors .chart-tooltip */
 }
 
 .card h2 {
@@ -152,6 +153,53 @@ main {
   font-size: var(--fs-label);
   color: var(--text-dim);
 }
+
+/* Semicircular dial gauge (js/gauge.js) — three fixed-color comfort bands
+   (low/healthy/high), a neutral needle (never a zone color, so it doesn't
+   compete with the band it's pointing into), and the value as a hero
+   figure underneath. */
+.gauge-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+svg.gauge {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  overflow: visible;
+}
+
+.gauge-band-low { stroke: var(--warning); }
+.gauge-band-mid { stroke: var(--healthy); }
+.gauge-band-high { stroke: var(--critical); }
+.gauge-band { stroke-linecap: butt; }
+
+.gauge-needle {
+  stroke: var(--text);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: x2 0.4s ease, y2 0.4s ease;
+}
+
+.gauge-pivot { fill: var(--text); }
+
+.gauge-scale-min, .gauge-scale-max {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.gauge-value {
+  margin-top: 2px;
+  /* Proportional (not tabular) figures at hero size — tabular-nums exists
+     for columns of aligned numbers, not a single large standalone value. */
+  font-variant-numeric: normal;
+}
+
+.gauge-zone-label { margin-top: 6px; }
 
 .badge {
   display: inline-flex;
@@ -216,6 +264,38 @@ canvas.chart {
   width: 100%;
   height: 220px;
   display: block;
+  cursor: crosshair;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-100%);
+  transition: opacity 0.1s ease;
+  z-index: 5;
+}
+
+.chart-tooltip.show { opacity: 1; }
+
+.chart-tooltip-time {
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.chart-tooltip-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
 }
 
 .range-picker {
