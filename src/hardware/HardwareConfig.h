@@ -25,10 +25,11 @@ constexpr uint8_t DEFAULT_BUTTON_GPIO = 0;
 // Onboard status LED, present on most ESP32 DevKit boards.
 constexpr uint8_t DEFAULT_STATUS_LED_GPIO = 2;
 
-// External temperature-indicator LED (TemperatureIndicator). GPIO14 is
+// External indicator LED (NetworkHealthIndicator — ping-latency status to
+// 8.8.8.8; previously a temperature indicator, repurposed). GPIO14 is
 // MTMS/JTAG on ESP32 but behaves as a plain GPIO whenever JTAG isn't wired
 // up, which is the common case — safe for a simple output LED.
-constexpr uint8_t DEFAULT_TEMP_LED_GPIO = 14;
+constexpr uint8_t DEFAULT_NETWORK_LED_GPIO = 14;
 
 constexpr const char *PLATFORM_NAME = "ESP32";
 
@@ -47,10 +48,11 @@ constexpr uint8_t DEFAULT_BUTTON_GPIO = 0; // D3
 // Onboard LED on most ESP8266 boards (active LOW).
 constexpr uint8_t DEFAULT_STATUS_LED_GPIO = 2; // D4
 
-// External temperature-indicator LED (TemperatureIndicator). GPIO14/D5 is
+// External indicator LED (NetworkHealthIndicator — ping-latency status to
+// 8.8.8.8; previously a temperature indicator, repurposed). GPIO14/D5 is
 // the SPI clock line but is free to use as a plain GPIO when the board
 // isn't using hardware SPI (this firmware doesn't) — not a strapping pin.
-constexpr uint8_t DEFAULT_TEMP_LED_GPIO = 14; // D5
+constexpr uint8_t DEFAULT_NETWORK_LED_GPIO = 14; // D5
 
 constexpr const char *PLATFORM_NAME = "ESP8266";
 

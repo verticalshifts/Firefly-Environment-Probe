@@ -85,6 +85,9 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.gen2MonitorName = doc["gen2MonitorName"] | c.gen2MonitorName;
     c.gen2IntervalS = doc["gen2IntervalS"] | c.gen2IntervalS;
 
+    c.otaCheckEnabled = doc["otaCheckEnabled"] | c.otaCheckEnabled;
+    c.otaCheckIntervalS = doc["otaCheckIntervalS"] | c.otaCheckIntervalS;
+
     config_ = c;
 }
 
@@ -136,9 +139,24 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     if (!redactSecrets) doc["gen2LicenseKey"] = c.gen2LicenseKey;
     doc["gen2MonitorName"] = c.gen2MonitorName;
     doc["gen2IntervalS"] = c.gen2IntervalS;
+
+    doc["otaCheckEnabled"] = c.otaCheckEnabled;
+    doc["otaCheckIntervalS"] = c.otaCheckIntervalS;
 }
 
 bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
+    // 32 bytes is a hard 802.11 protocol limit, not a preference — WiFi.begin()
+    // rejects anything longer with a generic WL_CONNECT_FAILED and no
+    // specific reason, so this catches it earlier with a clear message.
+    // Empty is fine (means "not yet provisioned").
+    if (c.wifiSsid.length() > 32) {
+        errorOut = "wifiSsid too long (max 32 bytes — a hard Wi-Fi protocol limit, not a device-side restriction)";
+        return false;
+    }
+    if (c.wifiConnectAttempts < 1 || c.wifiConnectAttempts > 10) {
+        errorOut = "wifiConnectAttempts out of range (1-10)";
+        return false;
+    }
     if (c.sensorType != "DHT11" && c.sensorType != "DHT22") {
         errorOut = "sensorType must be DHT11 or DHT22";
         return false;
@@ -171,6 +189,10 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
         errorOut = "gen2ServerUrl cannot be empty";
         return false;
     }
+    if (c.otaCheckIntervalS < 300 || c.otaCheckIntervalS > 604800) {
+        errorOut = "otaCheckIntervalS out of range (300-604800s)";
+        return false;
+    }
     return true;
 }
 
@@ -185,6 +207,7 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     if (updates["staticGateway"].is<const char *>()) c.staticGateway = updates["staticGateway"].as<String>();
     if (updates["staticSubnet"].is<const char *>()) c.staticSubnet = updates["staticSubnet"].as<String>();
     if (updates["staticDns"].is<const char *>()) c.staticDns = updates["staticDns"].as<String>();
+    if (updates["wifiConnectAttempts"].is<unsigned int>()) c.wifiConnectAttempts = updates["wifiConnectAttempts"];
 
     if (updates["authUsername"].is<const char *>()) c.authUsername = updates["authUsername"].as<String>();
     if (updates["authPassword"].is<const char *>() && updates["authPassword"].as<String>().length() > 0) {
@@ -226,6 +249,9 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     }
     if (updates["gen2MonitorName"].is<const char *>()) c.gen2MonitorName = updates["gen2MonitorName"].as<String>();
     if (updates["gen2IntervalS"].is<unsigned int>()) c.gen2IntervalS = updates["gen2IntervalS"];
+
+    if (updates["otaCheckEnabled"].is<bool>()) c.otaCheckEnabled = updates["otaCheckEnabled"];
+    if (updates["otaCheckIntervalS"].is<unsigned int>()) c.otaCheckIntervalS = updates["otaCheckIntervalS"];
 
     if (!validate(c, errorOut)) {
         return false;

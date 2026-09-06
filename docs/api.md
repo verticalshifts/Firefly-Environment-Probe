@@ -178,6 +178,7 @@ flow, or:
 
 ```bash
 curl -u admin:PASSWORD -X POST http://envprobe.local/api/ota \
+  -H "X-File-Size: $(stat -f%z firmware.bin)" \
   -F "firmware=@.pio/build/esp32/firmware.bin"
 ```
 
@@ -188,6 +189,61 @@ curl -u admin:PASSWORD -X POST http://envprobe.local/api/ota \
 On failure: `{ "status": "error", "message": "<Update library error>" }`
 with a non-200 status. The device reboots into the new firmware
 automatically on success.
+
+`X-File-Size` is optional but recommended: multipart uploads don't expose
+`Content-Length` to the server's upload handler, so without it the device
+can't tell an oversized image won't fit the inactive OTA partition until
+it's already streamed most of the way through — with it, an oversized
+upload is rejected immediately. Omitting the header falls back to the
+previous "unknown size" behavior; nothing else changes.
+
+A successful update arms a boot-confirmation flag (see
+[configuration.md](configuration.md)'s "OTA update safety" section) — the
+new firmware must prove itself stable (Wi-Fi connected for 15s) within a
+couple of minutes, or (ESP32 only) the device automatically reverts to the
+previous firmware.
+
+## GET /api/ota/status — no auth
+
+Auto-update-check status (opt-in, see `otaCheckEnabled` in
+[configuration.md](configuration.md)) plus boot-confirmation state. No
+secrets in the payload.
+
+```json
+{
+  "checked": true,
+  "available": true,
+  "latestVersion": "1.1.0",
+  "currentVersion": "1.0.0",
+  "assetUrl": "https://github.com/verticalshifts/Firefly-Environment-Probe/releases/download/v1.1.0/firmware-esp8266.bin",
+  "assetSha256": "3a7bd3e2360a3d...",
+  "releaseNotesUrl": "https://github.com/verticalshifts/Firefly-Environment-Probe/releases/tag/v1.1.0",
+  "lastError": "",
+  "lastCheckSecondsAgo": 42,
+  "bootConfirmPending": false,
+  "lastBootFailedToConfirm": false
+}
+```
+
+## POST /api/ota/check-now — auth required
+
+Forces the next `otaUpdateChecker.loop()` tick to check immediately,
+instead of waiting for `otaCheckIntervalS`. `{ "status": "ok" }`.
+
+## POST /api/ota/install-latest — auth required
+
+Downloads and installs the release found by the last successful check.
+Refuses with `400` if no update is available, or if the release has no
+published SHA-256 checksum (see [release-process.md](../docs/release-process.md)
+— installs are never allowed to proceed unverified). On checksum mismatch:
+`500`, and the currently-running firmware is left completely untouched
+(the new image only replaces the boot pointer after verification passes).
+On success: `{ "status": "ok" }`, device reboots, same boot-confirmation
+safety as the manual upload path above.
+
+```bash
+curl -u admin:PASSWORD -X POST http://envprobe.local/api/ota/install-latest
+```
 
 ## GET /api/provisioning-info
 

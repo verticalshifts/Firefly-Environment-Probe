@@ -40,13 +40,11 @@ bool DeviceManager::begin() {
     JsonDocument doc;
     if (storage_.exists(DEVICE_STATE_PATH) && storage_.readJsonFile(DEVICE_STATE_PATH, doc)) {
         bootCount_ = (doc["bootCount"] | 0);
+        uptimeOffsetS_ = (doc["uptimeOffsetS"] | 0);
     }
     bootCount_++;
 
-    doc.clear();
-    doc["bootCount"] = bootCount_;
-    doc["deviceId"] = deviceId_;
-    storage_.writeJsonFile(DEVICE_STATE_PATH, doc);
+    saveState();
 
     Logger::info(TAG, "Device ID: " + deviceId_ + ", boot #" + String(bootCount_));
 
@@ -66,6 +64,33 @@ bool DeviceManager::begin() {
     }
 
     return true;
+}
+
+void DeviceManager::saveState() {
+    JsonDocument doc;
+    doc["bootCount"] = bootCount_;
+    doc["deviceId"] = deviceId_;
+    doc["uptimeOffsetS"] = uptimeOffsetS_;
+    storage_.writeJsonFile(DEVICE_STATE_PATH, doc);
+}
+
+void DeviceManager::loop() {
+    unsigned long now = millis();
+    if (lastOffsetSaveMs_ != 0 && now - lastOffsetSaveMs_ < OFFSET_SAVE_INTERVAL_MS) return;
+    lastOffsetSaveMs_ = now;
+
+    // uptimeOffsetS_ itself stays fixed for the whole session (it's the
+    // base this session started from) — getContinuousUptimeS() already
+    // adds this session's own millis()/1000 on top of it live. What we
+    // persist here is that *sum*, so the next boot's base picks up close
+    // to where this session actually was, even after an ungraceful reset
+    // (crash, power loss) rather than a clean reboot that might otherwise
+    // get a chance to save first.
+    JsonDocument doc;
+    doc["bootCount"] = bootCount_;
+    doc["deviceId"] = deviceId_;
+    doc["uptimeOffsetS"] = getContinuousUptimeS();
+    storage_.writeJsonFile(DEVICE_STATE_PATH, doc);
 }
 
 DeviceStatus DeviceManager::getStatus() const {

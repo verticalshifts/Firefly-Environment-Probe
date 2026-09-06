@@ -161,7 +161,23 @@ actually retained — it never claims data that was never stored.
 same platform (`pio run -e esp32` produces `.pio/build/esp32/firmware.bin`,
 likewise for `esp8266`), and upload. The device validates the image via the
 platform's own `Update` library (which rejects an image with an invalid
-header for that chip) and reboots into it once the upload completes.
+header for that chip), rejects an oversized image immediately rather than
+after streaming it, and reboots into it once the upload completes. A
+boot-confirmation safety flag arms on every OTA: the new firmware must
+stay connected to Wi-Fi for 15s or (ESP32 only) the device automatically
+reverts to the previous firmware — see
+[docs/architecture.md](docs/architecture.md)'s "OTA rollback safety".
+
+### 6a. Automatic update checking (opt-in)
+
+**Settings → Automatic Updates**, check "Check for updates". The device
+periodically checks this repo's GitHub Releases and shows an "Update
+available" banner in Settings when a newer version is found — it never
+installs on its own; you click "Install Update" to trigger the download
+and flash. See [docs/configuration.md](docs/configuration.md)'s "OTA
+update checking" section, and
+[docs/release-process.md](docs/release-process.md) for how a release needs
+to be published (asset naming, checksums) for the auto-updater to find it.
 
 ## 7. Factory reset
 
@@ -178,9 +194,11 @@ See [docs/api.md](docs/api.md) for the full reference. Summary:
 GET  /api/status        GET  /api/history?range=1h|6h|24h|7d
 GET  /api/environment    GET  /api/config        (auth required)
 GET  /api/network        POST /api/config        (auth required)
-                          POST /api/restart        (auth required)
+GET  /api/ota/status     POST /api/restart        (auth required)
                           POST /api/factory-reset  (auth required)
                           POST /api/ota            (auth required)
+                          POST /api/ota/check-now      (auth required)
+                          POST /api/ota/install-latest (auth required)
 ```
 
 ## 9. Troubleshooting

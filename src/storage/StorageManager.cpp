@@ -90,6 +90,8 @@ bool StorageManager::wipeAll() {
     LittleFS.remove(paths::DEVICE_STATE);
     LittleFS.remove(paths::ENV_HISTORY);
     LittleFS.rmdir("/history"); // harmless no-op if not empty or absent
+    LittleFS.remove(paths::OTA_BOOT_STATE);
+    LittleFS.remove(String(paths::OTA_BOOT_STATE) + ".tmp");
 
     return true;
 }

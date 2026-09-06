@@ -1,8 +1,13 @@
 /* Environment & Network Probe — local dashboard styles.
-   No external fonts/CDN; system font stack only (section 13). */
+   No external fonts/CDN; system font stack only (section 13).
+   Glassmorphism: translucent, blurred surfaces floating over a fixed
+   accent-blue-to-black gradient backdrop. Applied to chrome/containers
+   (header, cards, fieldsets, tooltips, toasts) — inputs and buttons stay
+   more opaque than the ambient glass so they read clearly as interactive,
+   not just decorative. */
 
 :root {
-  --bg: #0f1420;
+  --bg: #0a0e18;
   --panel: #161d2e;
   --panel-border: #232c42;
   --text: #e7ebf3;
@@ -20,7 +25,22 @@
   --critical: #e0503f;
   --offline: #6b7386;
 
-  --radius: 10px;
+  --radius: 14px;
+
+  /* Glass surface tokens. Two strengths: the ambient one for large chrome
+     (cards, header) that mostly exists to hold content and catch the
+     background's glow, and a stronger one for anything the user reads
+     text off of at length or types into, where extra contrast matters
+     more than the effect. */
+  --glass-bg: rgba(255, 255, 255, 0.055);
+  --glass-bg-strong: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.11);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* Strong, deliberate easing (not the built-in CSS ones, which read as
+     weak/mushy) — used for anything users press or toggle often. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* Deliberate 4-step type scale (each step ≥1.25× the last) instead of ad
      hoc sizes per element — keeps the hierarchy readable at a glance:
@@ -37,12 +57,24 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  min-height: 100%;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.45;
   color-scheme: dark;
+}
+
+/* Fixed accent-blue-to-black backdrop: two soft glows anchored at the top
+   corners (something for the glass panels to actually refract) fading into
+   near-black lower on the page. `fixed` so it reads as one continuous
+   surface behind scrolling content rather than repeating per page. */
+body {
+  background:
+    radial-gradient(1100px 700px at 12% -8%, rgba(79, 140, 255, 0.32), transparent 60%),
+    radial-gradient(900px 650px at 100% 0%, rgba(47, 95, 206, 0.22), transparent 55%),
+    linear-gradient(180deg, #060911 0%, #000000 100%);
+  background-attachment: fixed;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -53,10 +85,12 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--glass-border);
   position: sticky;
   top: 0;
-  background: var(--bg);
+  background: rgba(6, 9, 15, 0.6);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   z-index: 10;
 }
 
@@ -94,10 +128,11 @@ nav.tabs a {
   border-radius: 8px;
   font-size: var(--fs-body);
   font-weight: 500;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
-nav.tabs a:hover { color: var(--text); text-decoration: none; background: var(--panel); }
-nav.tabs a.active { color: var(--text); background: var(--panel); border: 1px solid var(--panel-border); }
+nav.tabs a:hover { color: var(--text); text-decoration: none; background: var(--glass-bg-strong); }
+nav.tabs a.active { color: var(--text); background: var(--glass-bg-strong); border: 1px solid var(--glass-border); }
 
 main {
   max-width: 1080px;
@@ -119,8 +154,11 @@ main {
 }
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   border-radius: var(--radius);
   padding: 16px 18px;
   position: relative; /* anchors .chart-tooltip */
@@ -133,6 +171,19 @@ main {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
+}
+
+/* A note/callout living *inside* a glass surface (e.g. provision.html's
+   generated-password notice inside .setup-card) — deliberately NOT another
+   .card: nesting the same blur+border+shadow treatment inside itself reads
+   as visual noise (two overlapping glass layers). A colored side-border
+   was the first instinct here, but that's its own well-known AI-UI tell —
+   plain top/bottom hairlines plus spacing carry the separation instead,
+   per the flatten-don't-nest-containers principle without adding a new one. */
+.callout {
+  border-top: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 14px 0;
 }
 
 .metric {
@@ -210,6 +261,8 @@ svg.gauge {
   font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .badge::before {
@@ -220,10 +273,10 @@ svg.gauge {
   background: currentColor;
 }
 
-.badge.HEALTHY, .badge.OK, .badge.UP, .badge.ok { color: var(--healthy); background: rgba(51,193,122,0.12); }
-.badge.WARNING, .badge.DEGRADED { color: var(--warning); background: rgba(224,167,48,0.14); }
-.badge.CRITICAL, .badge.DOWN, .badge.SENSOR_ERROR, .badge.error { color: var(--critical); background: rgba(224,80,63,0.14); }
-.badge.OFFLINE, .badge.unknown { color: var(--offline); background: rgba(107,115,134,0.14); }
+.badge.HEALTHY, .badge.OK, .badge.UP, .badge.ok { color: var(--healthy); background: rgba(51,193,122,0.16); }
+.badge.WARNING, .badge.DEGRADED { color: var(--warning); background: rgba(224,167,48,0.18); }
+.badge.CRITICAL, .badge.DOWN, .badge.SENSOR_ERROR, .badge.error { color: var(--critical); background: rgba(224,80,63,0.18); }
+.badge.OFFLINE, .badge.unknown { color: var(--offline); background: rgba(107,115,134,0.18); }
 
 table {
   width: 100%;
@@ -234,7 +287,7 @@ table {
 th, td {
   text-align: left;
   padding: 9px 8px;
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--glass-border);
 }
 
 th {
@@ -270,20 +323,23 @@ canvas.chart {
 .chart-tooltip {
   position: absolute;
   pointer-events: none;
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
+  background: rgba(10, 14, 24, 0.75);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: 7px;
   padding: 7px 10px;
   font-size: var(--fs-label);
   line-height: 1.5;
   white-space: nowrap;
   opacity: 0;
-  transform: translateY(-100%);
-  transition: opacity 0.1s ease;
+  transform: translateY(-100%) scale(0.97);
+  transform-origin: bottom center;
+  transition: opacity 125ms var(--ease-out), transform 125ms var(--ease-out);
   z-index: 5;
 }
 
-.chart-tooltip.show { opacity: 1; }
+.chart-tooltip.show { opacity: 1; transform: translateY(-100%) scale(1); }
 
 .chart-tooltip-time {
   color: var(--text-dim);
@@ -305,16 +361,18 @@ canvas.chart {
 }
 
 .range-picker button {
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   color: var(--text-dim);
   padding: 6px 12px;
   border-radius: 7px;
   font-size: var(--fs-label);
   cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, transform 120ms var(--ease-out);
 }
 
 .range-picker button.active { color: var(--text); border-color: var(--accent); }
+.range-picker button:active { transform: scale(0.96); }
 
 form.settings-form {
   display: grid;
@@ -333,21 +391,33 @@ form.settings-form {
 }
 
 input, select {
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--glass-border);
   color: var(--text);
   padding: 9px 10px;
   border-radius: 7px;
   font-size: var(--fs-body);
   font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
-input:focus, select:focus { outline: none; border-color: var(--accent); }
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.25);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
 
 input::placeholder { color: var(--text-dim); opacity: 1; }
 
 fieldset {
-  border: 1px solid var(--panel-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   border-radius: var(--radius);
   padding: 14px 16px 16px;
   margin: 0;
@@ -371,56 +441,80 @@ button.primary, .btn {
   font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
+  transition: filter 150ms ease, transform 120ms var(--ease-out);
 }
 
 button.primary:hover, .btn:hover { filter: brightness(1.08); }
+button.primary:active, .btn:active { transform: scale(0.97); }
 
 button.danger {
-  background: transparent;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: var(--critical);
-  border: 1px solid var(--critical);
+  border: 1px solid rgba(224, 80, 63, 0.55);
+  border: 1px solid color-mix(in srgb, var(--critical) 55%, transparent);
   padding: 9px 15px;
   border-radius: 8px;
   font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
+  transition: background-color 150ms ease, transform 120ms var(--ease-out);
 }
 
+button.danger:hover { background: rgba(224, 80, 63, 0.14); }
+button.danger:hover { background: color-mix(in srgb, var(--critical) 14%, var(--glass-bg-strong)); }
+button.danger:active { transform: scale(0.97); }
+
 button.secondary {
-  background: transparent;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: var(--text);
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--glass-border);
   padding: 9px 15px;
   border-radius: 8px;
   font-size: var(--fs-body);
   font-weight: 600;
   cursor: pointer;
+  transition: background-color 150ms ease, transform 120ms var(--ease-out);
+}
+
+button.secondary:hover { background: rgba(255, 255, 255, 0.13); }
+button.secondary:active { transform: scale(0.97); }
+
+@media (hover: hover) and (pointer: fine) {
+  .card { transition: border-color 200ms ease, box-shadow 200ms ease; }
+  .card:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--glass-border)); }
 }
 
 .toast {
   position: fixed;
   bottom: 20px;
   left: 50%;
-  transform: translateX(-50%);
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
+  transform: translateX(-50%) translateY(0) scale(1);
+  background: rgba(10, 14, 24, 0.7);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   padding: 10px 18px;
   border-radius: 8px;
   font-size: var(--fs-body);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
 }
 
-.toast.show { opacity: 1; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px) scale(1); }
 
 .hint { font-size: var(--fs-label); color: var(--text-dim); }
 
 .log-list {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-label);
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--glass-border);
   border-radius: 8px;
   padding: 10px 12px;
   max-height: 240px;
@@ -439,9 +533,12 @@ button.secondary {
 }
 
 .setup-card {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(150%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 20px;
   padding: 28px 26px;
   width: 100%;
   max-width: 420px;
@@ -467,4 +564,8 @@ button.secondary {
   main { padding: 14px; }
   .field-row { grid-template-columns: 1fr; }
   .metric { font-size: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; }
 }

@@ -34,6 +34,7 @@
       <legend>Wi-Fi</legend>
       <div class="field"><label for="wifiSsid">SSID</label><input id="wifiSsid" name="wifiSsid"></div>
       <div class="field"><label for="wifiPassword">Password (leave blank to keep current)</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field"><label for="wifiConnectAttempts">Connect Attempts (before falling back to setup mode)</label><input id="wifiConnectAttempts" name="wifiConnectAttempts" type="number" min="1" max="10"></div>
       <div class="field">
         <label><input type="checkbox" id="useStaticIp" name="useStaticIp" style="width:auto;display:inline-block;"> Use static IP</label>
       </div>
@@ -123,6 +124,15 @@
       <div class="field"><label for="gen2IntervalS">Post Interval (seconds)</label><input id="gen2IntervalS" name="gen2IntervalS" type="number" min="30" max="3600"></div>
     </fieldset>
 
+    <fieldset>
+      <legend>Automatic Updates</legend>
+      <p class="hint">Optional: periodically checks GitHub for a newer firmware release and shows a banner below when one is found. Never installs automatically — you choose when to install.</p>
+      <div class="field">
+        <label><input type="checkbox" id="otaCheckEnabled" name="otaCheckEnabled" style="width:auto;display:inline-block;"> Check for updates</label>
+      </div>
+      <div class="field"><label for="otaCheckIntervalS">Check Interval (seconds)</label><input id="otaCheckIntervalS" name="otaCheckIntervalS" type="number" min="300" max="604800"></div>
+    </fieldset>
+
     <div class="actions-row">
       <button type="submit" class="primary">Save Settings</button>
     </div>
@@ -134,8 +144,15 @@
     <input type="file" id="otaFile" accept=".bin">
     <div class="actions-row">
       <button class="primary" id="otaUploadBtn">Upload Firmware</button>
+      <button class="secondary" id="otaCheckNowBtn">Check Now</button>
     </div>
     <p class="hint" id="otaStatus"></p>
+    <div id="otaUpdateBanner" style="display:none;margin-top:10px;">
+      <p class="hint">Update available: <strong id="otaLatestVersion"></strong> — <a id="otaReleaseNotesLink" href="#" target="_blank" rel="noopener">release notes</a></p>
+      <div class="actions-row">
+        <button class="primary" id="otaInstallBtn">Install Update</button>
+      </div>
+    </div>
   </div>
 
   <div class="section-title">Danger Zone</div>

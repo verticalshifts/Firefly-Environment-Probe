@@ -32,6 +32,10 @@ web/WebServerManager          dashboard + REST API + auth + OTA upload
                               routing (synchronous WebServer)
 
 ota/OTAManager                thin wrapper around the Update library
+ota/BootGuard                 boot-confirmation flag + ESP32 auto-revert
+ota/OTAUpdateChecker          opt-in, notify-only GitHub Releases polling
+ota/GitHubApiRootCA.h         pinned root for api.github.com (Sectigo, ECDSA)
+ota/GitHubAssetRootCA.h       pinned root for the release-asset CDN (Let's Encrypt)
 
 telemetry/
   TelemetryProvider              Phase 2 seam (see below)
@@ -42,7 +46,7 @@ hardware/                    hardware abstraction layer (HAL)
   HardwareConfig.h                    per-platform pin/constant defaults
   FSCompat.h                          LittleFS.begin() differences
   PingCompat.h                        ESP32Ping vs ESP8266Ping differences
-  TemperatureIndicator                non-blocking temperature-band LED driver
+  NetworkHealthIndicator               non-blocking ping-latency LED driver (8.8.8.8)
 
 util/
   Logger                        lightweight Serial + in-RAM ring logging
@@ -110,6 +114,48 @@ connection attempt in `NetworkManager::begin()` — during `setup()`, before
 the web server or anything else is running, where blocking briefly to know
 whether to fall back to provisioning mode is the correct behavior.
 
+**A second named exception**: `POST /api/ota/install-latest`
+(`WebServerManager::handleApiOtaInstallLatest()`) downloads and flashes the
+firmware update synchronously, inside the request handler, blocking the
+whole (single-threaded) `WebServer` for the download's full duration —
+deliberately, not an oversight. The existing manual-upload OTA path
+already blocks the same way for its entire duration (pre-existing
+precedent this doesn't introduce); building a genuinely non-blocking
+chunked downloader (a live `HTTPClient`+`SecureClient` stream kept open
+across multiple `loop()` passes, correctly interleaved with
+`Update.write()`) is real, failure-prone complexity for a rare,
+deliberately human-triggered, one-off action — not the kind of routine
+continuous work (`NetworkProbe`, `EnvironmentManager`) the non-blocking
+mandate above targets. `yield()`/`PlatformManager::feedWatchdog()` is
+called per chunk so the platform watchdog doesn't trip during the transfer.
+
+## History timestamps survive reboots
+
+`EnvironmentReading`/`EnvHistoryPoint` timestamps come from
+`DeviceManager::getContinuousUptimeS()`, not plain `millis()/1000`. Neither
+platform has a battery-backed RTC, so `millis()` resets to 0 on every
+reboot — but the environment history *file* lives on LittleFS and survives
+reboots. Stamping points with plain `millis()/1000` meant every reboot
+reset the clock those points are measured against while old points from
+before the reboot stayed in the ring, so the file ended up with wildly
+non-monotonic timestamps interleaved together — confirmed live as the
+cause of the dashboard's history charts rendering as scrambled/crossed
+lines after this device's many reboots during development.
+`getContinuousUptimeS()` adds a persisted offset (`DeviceManager::loop()`
+saves it to `/device.json` every 5 minutes) on top of the current
+session's own `millis()/1000`, so the clock only ever moves forward across
+a reboot — accurate to within one save interval of an ungraceful reset,
+which is a fine trade for a monitoring history feature. `js/charts.js`
+also sorts points by timestamp defensively before drawing, so old
+already-corrupted history (from before this fix, still aging out of the
+ring) can't render as a broken chart either.
+
+Session-relative uptime (`DeviceManager::getUptimeSeconds()`, still plain
+`millis()/1000`) is unchanged and used deliberately where a reboot
+*resetting* the value is the actual signal — e.g. the OTA install flow's
+Settings-page polling detects a successful reboot by watching
+`uptimeSeconds` drop.
+
 ## Memory budget (why ESP8266 works too)
 
 ESP8266 has ~80KB RAM total vs. ESP32's ~320KB, and roughly half the app
@@ -149,11 +195,12 @@ keep both platforms comfortably under budget:
 ## Auth model
 
 The dashboard's live monitoring views (`/api/status`, `/environment`,
-`/network`, `/history`) are unauthenticated — they contain no secrets and
-are meant to be glanceable on the LAN. Everything that changes device state
-or reveals configuration (`/api/config` GET *and* POST, `/api/restart`,
-`/api/factory-reset`, `/api/ota`) requires HTTP Basic Auth against
-`authUsername`/`authPassword` in config. `GET /api/config` redacts
+`/network`, `/history`, `/api/ota/status`) are unauthenticated — they
+contain no secrets and are meant to be glanceable on the LAN. Everything
+that changes device state or reveals configuration (`/api/config` GET
+*and* POST, `/api/restart`, `/api/factory-reset`, `/api/ota`,
+`/api/ota/check-now`, `/api/ota/install-latest`) requires HTTP Basic Auth
+against `authUsername`/`authPassword` in config. `GET /api/config` redacts
 `wifiPassword` and `authPassword` even though the request is authenticated,
 so the current values are never round-tripped back to the browser.
 
@@ -192,3 +239,39 @@ cutover — see `docs/configuration.md`'s GEN2 fields for what it does and
 doesn't send. GEN2's backend does persist `temperature`/`humidity`, but
 only renders them on a monitor's own detail/history page, not the general
 monitor list — see `docs/configuration.md`'s GEN2 section.
+
+## OTA rollback safety (ESP32 vs. ESP8266)
+
+Both OTA paths (manual upload, `POST /api/ota/install-latest`) arm
+`BootGuard` (`src/ota/BootGuard.h/.cpp`) right before restarting into the
+new image. The new firmware must prove itself stable — Wi-Fi connected
+continuously for 15s, the cheapest meaningful signal available without new
+instrumentation, and every real regression found live this session was a
+WiFi-stability problem, not sensor/logic — within a 2-minute window (or
+across 3 boot-crash cycles, if it never reaches `loop()` at all) or the
+update is treated as failed.
+
+**ESP32 gets a real automatic revert.** `armPendingConfirm()` captures the
+currently-running (known-good) partition's label via
+`esp_ota_get_running_partition()`; a failed confirmation calls
+`esp_ota_set_boot_partition()` back to it and restarts. This works via
+Arduino-ESP32's exposed `esp_ota_ops.h`/`esp_partition.h` APIs — stable,
+public, documented — without needing the bootloader's native
+`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` feature, which isn't compiled into
+the framework's prebuilt bootloader by default.
+
+**ESP8266 gets report-only: no automatic revert is attempted.** This is
+deliberate, not an oversight. There is no equivalently stable, documented
+Arduino-core API for it — only low-level, undocumented-for-this-purpose
+`eboot_command` bootloader manipulation, which risks bricking the device if
+done wrong, for a codebase with zero prior OTA-rollback track record
+before this feature. A failed confirmation on ESP8266 just persists
+`lastFailedToConfirm=true` (visible via `GET /api/ota/status`, survives a
+power cycle) and logs clearly — the device keeps running whatever it
+booted into, and a human has to intervene (re-flash over serial, or
+another OTA) if that firmware turns out to be broken.
+
+**Known, disclosed gap on both platforms**: if a bad image crashes hard
+enough that `loop()` never runs even once, only the flash-persisted
+attempt counter (not the in-RAM confirm timer) catches it — and only after
+3 full boot-crash cycles, not immediately.

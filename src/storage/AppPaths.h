@@ -16,5 +16,6 @@ namespace paths {
 constexpr const char *CONFIG = "/config.json";
 constexpr const char *DEVICE_STATE = "/device.json";
 constexpr const char *ENV_HISTORY = "/history/env.bin";
+constexpr const char *OTA_BOOT_STATE = "/ota_boot.json";
 
 } // namespace paths

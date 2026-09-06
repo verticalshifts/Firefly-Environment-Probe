@@ -26,7 +26,12 @@ struct DeviceConfig {
     String staticGateway = "";
     String staticSubnet = "255.255.255.0";
     String staticDns = "";
-    uint8_t wifiConnectAttempts = 20; // ~10s at 500ms/attempt before giving up
+    // Number of full connect attempts (fresh scan + WiFi.begin() each,
+    // not polls of one attempt) during the initial blocking connect in
+    // setup(), spread evenly across a fixed ~60s total budget — see
+    // NetworkManager::WIFI_CONNECT_TOTAL_BUDGET_MS. Falls back to the
+    // provisioning AP only after all attempts in that window are exhausted.
+    uint8_t wifiConnectAttempts = 3;
 
     // Local dashboard auth (section 25)
     String authUsername = "admin";
@@ -76,6 +81,13 @@ struct DeviceConfig {
     String gen2LicenseKey = "";   // secret — redacted in toJson(redactSecrets=true)
     String gen2MonitorName = ""; // blank = falls back to deviceName
     uint32_t gen2IntervalS = 60; // min HTTPS POST spacing to GEN2, independent of environmentIntervalS
+
+    // OTA auto-update checking (opt-in, disabled by default; notify-only —
+    // never auto-installs, see src/ota/OTAUpdateChecker.h). The GitHub repo
+    // checked against is a compile-time constant (OTA_GITHUB_OWNER/REPO in
+    // platformio.ini), not a Settings field — see that file's comment.
+    bool otaCheckEnabled = false;
+    uint32_t otaCheckIntervalS = 21600; // 6h
 };
 
 class ConfigManager {

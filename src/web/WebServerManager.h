@@ -17,6 +17,8 @@
 #include "device/DeviceManager.h"
 #include "storage/StorageManager.h"
 #include "ota/OTAManager.h"
+#include "ota/BootGuard.h"
+#include "ota/OTAUpdateChecker.h"
 
 #if defined(PLATFORM_ESP32)
 #include <WebServer.h>
@@ -33,7 +35,9 @@ public:
                       NetworkManager &network,
                       NetworkProbe &probe,
                       DeviceManager &device,
-                      StorageManager &storage);
+                      StorageManager &storage,
+                      BootGuard &bootGuard,
+                      OTAUpdateChecker &otaChecker);
 
     void begin();
     void loop();
@@ -52,6 +56,8 @@ private:
     NetworkProbe &probe_;
     DeviceManager &device_;
     StorageManager &storage_;
+    BootGuard &bootGuard_;
+    OTAUpdateChecker &otaChecker_;
     OTAManager ota_;
 
     bool restartRequested_ = false;
@@ -82,5 +88,8 @@ private:
     void handleProvisioningInfo();
     void handleOtaComplete();
     void handleOtaUpload();
+    void handleApiOtaStatus();
+    void handleApiOtaCheckNow();
+    void handleApiOtaInstallLatest();
     void handleNotFound();
 };

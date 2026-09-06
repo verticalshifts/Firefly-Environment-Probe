@@ -6,8 +6,9 @@
 
 static const char *TAG = "Environment";
 
-EnvironmentManager::EnvironmentManager(ConfigManager &config)
+EnvironmentManager::EnvironmentManager(ConfigManager &config, DeviceManager &device)
     : config_(config),
+      device_(device),
       history_(paths::ENV_HISTORY, sizeof(EnvHistoryPoint), hw::HISTORY_MAX_RECORDS) {}
 
 void EnvironmentManager::createSensor() {
@@ -48,7 +49,7 @@ void EnvironmentManager::loop() {
         current_.temperature = t;
         current_.humidity = h;
         current_.valid = true;
-        current_.timestamp = now / 1000;
+        current_.timestamp = device_.getContinuousUptimeS();
         consecutiveFailures_ = 0;
         status_ = EnvironmentStatus::OK;
     } else {

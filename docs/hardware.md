@@ -81,43 +81,54 @@ Phase 1 doesn't currently drive this LED from firmware (kept out per
 "don't over-engineer" — it's a config constant in `hardware/HardwareConfig.h`
 ready for a future status-blink feature, not wired to anything yet).
 
-## Temperature-indicator LED
+## Network-health indicator LED
 
-An external LED wired to `hw::DEFAULT_TEMP_LED_GPIO` (GPIO14 on both
+An external LED wired to `hw::DEFAULT_NETWORK_LED_GPIO` (GPIO14 on both
 platforms — D5 on ESP8266 silkscreens) gives an at-a-glance physical read of
-the current temperature band, driven non-blocking by
-`hardware/TemperatureIndicator.cpp` from `EnvironmentManager`'s current
-reading:
+ping latency to a fixed target (8.8.8.8), driven non-blocking by
+`hardware/NetworkHealthIndicator.cpp` on its own 10s ping timer — separate
+from, and faster than, `NetworkProbe`'s own 30s ground-probe cycle. This LED
+used to be a `TemperatureIndicator`; that class is gone and temperature is
+no longer shown via LED at all, only via the dashboard's gauge widgets.
 
-| Temperature | Pattern |
+| Latency | Pattern |
 |---|---|
-| < 20°C | 1s on / 10s off |
-| 20°C – <28°C | 2s on / 1s off |
-| ≥ 28°C | Steady on |
+| ≤ 59ms | Steady on |
+| 60–90ms, sustained for 10 consecutive pings | 3s on / 1s off |
+| > 90ms or lost, sustained for 10 consecutive pings | 0.5s on / 0.5s off |
 
-While no valid reading is available yet (boot, or `SENSOR_ERROR`), the LED
-is held off rather than showing a stale/misleading pattern.
+"Sustained for 10 consecutive pings" is a real consecutive-run counter, not
+a sliding window: a single stray slow or lost ping can't flip the LED into
+a degraded pattern on its own. Steady-on is the default/fallback state —
+recovery back to it is immediate, with no consecutive-good requirement
+symmetric to the two degraded tiers. While Wi-Fi is disconnected, no pings
+are sent and the LED holds whatever pattern it last had.
+
+A lost/timed-out ping blocks for the underlying ping library's fixed ~1s
+timeout (neither ESP32Ping nor ESP8266Ping expose a shorter one) — same
+bounded-blocking tradeoff `docs/architecture.md` already documents for
+`NetworkProbe`'s own pings, just on this LED's own 10s schedule instead of
+NetworkProbe's 30s one. Worst case (100% loss) is a ~1s block once per 10s
+tick.
 
 Wiring assumes a standard external LED (anode → GPIO, cathode → GND), so
 GPIO HIGH lights it. If wired the other way (LED to 3.3V, GPIO sinks it),
-flip the polarity in `TemperatureIndicator::setLed()`.
+flip the polarity in `NetworkHealthIndicator::setLed()`.
 
-**Brightness/dimming is platform-specific** — on ESP32, `analogWrite()`
-drives real hardware PWM (LEDC) and `LED_BRIGHTNESS` in
-`TemperatureIndicator.cpp` dims it safely. **On ESP8266 the LED is always
-full brightness**, driven by plain `digitalWrite()`: ESP8266 has no
-hardware PWM, and `analogWrite()` there is a software timer-interrupt
-waveform generator that was confirmed, live, to cause WiFi packet loss on
-this board when used for this LED — reverted for that reason, not a
-stopgap.
+**Full brightness only, on both platforms** — this LED is strictly on/off,
+so it's driven by plain `digitalWrite()` with no PWM/dimming anywhere.
+Earlier, when this GPIO drove a dimmable `TemperatureIndicator`, ESP8266
+used `analogWrite()` for brightness control; that was confirmed, live, to
+cause real WiFi packet loss on this board (ESP8266 has no hardware PWM —
+`analogWrite()` there is a software timer-interrupt waveform generator) and
+was reverted. That risk doesn't apply here since this LED never dims.
 
 **Use a series resistor** (typically 220–1k ohm for a 3.3V-supplied
 indicator LED, exact value depends on the LED's forward voltage/rated
 current) — without one, the LED runs at whatever current the GPIO + LED
 happen to settle at unregulated, which is usually well past the LED's rated
-current. On ESP8266 this is now the *only* safe way to both protect the
-LED/GPIO and reduce brightness (a higher-value resistor directly reduces
-DC current, with no PWM/WiFi tradeoff involved).
+current. This is the only current-limiting in the circuit now that the LED
+never dims via PWM on either platform.
 
 ## Flash partitioning
 

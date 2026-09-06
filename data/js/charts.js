@@ -1,6 +1,7 @@
 // Minimal dependency-free canvas line/area chart. Handles one or two series
-// sharing an x-axis of relative seconds-since-boot timestamps, with a soft
-// fill, gridlines, x/y-axis labels, and a hover crosshair + tooltip.
+// sharing an x-axis of relative seconds-since-boot timestamps, with a
+// smoothed soft-fill line, a dotted yellow average reference line per
+// series, gridlines, x/y-axis labels, and a hover crosshair + tooltip.
 
 function formatAgo(secondsAgo) {
   if (secondsAgo <= 0) return "now";
@@ -8,6 +9,27 @@ function formatAgo(secondsAgo) {
   if (secondsAgo < 3600) return Math.round(secondsAgo / 60) + "m ago";
   if (secondsAgo < 86400) return (secondsAgo / 3600).toFixed(secondsAgo < 36000 ? 1 : 0) + "h ago";
   return (secondsAgo / 86400).toFixed(1) + "d ago";
+}
+
+// Traces a smoothed path through `points` onto the current canvas path
+// (caller does beginPath()/stroke()/fill()) — quadratic curves through the
+// midpoint of each consecutive pair, using the real point as the control,
+// so corners round off instead of meeting at a sharp angle. Falls back to
+// a straight line for 1-2 points, where "smoothing" has nothing to work with.
+function tracePath(ctx, points, xPix, yPix) {
+  const pix = points.map((p) => ({ x: xPix(p.x), y: yPix(p.y) }));
+  ctx.moveTo(pix[0].x, pix[0].y);
+  if (pix.length < 3) {
+    if (pix.length === 2) ctx.lineTo(pix[1].x, pix[1].y);
+    return;
+  }
+  for (let i = 1; i < pix.length - 1; i++) {
+    const midX = (pix[i].x + pix[i + 1].x) / 2;
+    const midY = (pix[i].y + pix[i + 1].y) / 2;
+    ctx.quadraticCurveTo(pix[i].x, pix[i].y, midX, midY);
+  }
+  const secondLast = pix[pix.length - 2], last = pix[pix.length - 1];
+  ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
 }
 
 function chartTooltip(canvas) {
@@ -24,6 +46,14 @@ function chartTooltip(canvas) {
 
 function drawLineChart(canvas, series, opts) {
   opts = opts || {};
+  // Defensive: the line is drawn by connecting points in array order, so
+  // out-of-order timestamps render as a scrambled/crossed-over zigzag
+  // rather than a clean trend line. The device's history clock is now
+  // continuous across reboots (see DeviceManager::getContinuousUptimeS()),
+  // but old points recorded before that fix (or any future data hiccup)
+  // could still be non-monotonic — sorting here means the chart can never
+  // look broken regardless of what the API returns.
+  series = series.map((s) => ({ ...s, points: [...s.points].sort((a, b) => a.x - b.x) }));
   canvas._series = series;
   canvas._opts = opts;
 
@@ -95,15 +125,12 @@ function drawLineChart(canvas, series, opts) {
   ctx.textAlign = "left";
 
   series.forEach((s) => {
-    // Soft fill under the line, fading to transparent at the baseline.
+    // Soft fill under the (smoothed) line, fading to transparent at the baseline.
     const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
     grad.addColorStop(0, s.color + "33");
     grad.addColorStop(1, s.color + "00");
     ctx.beginPath();
-    s.points.forEach((p, i) => {
-      const px = xPix(p.x), py = yPix(p.y);
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    });
+    tracePath(ctx, s.points, xPix, yPix);
     ctx.lineTo(xPix(s.points[s.points.length - 1].x), padT + plotH);
     ctx.lineTo(xPix(s.points[0].x), padT + plotH);
     ctx.closePath();
@@ -115,11 +142,30 @@ function drawLineChart(canvas, series, opts) {
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.beginPath();
-    s.points.forEach((p, i) => {
-      const px = xPix(p.x), py = yPix(p.y);
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    });
+    tracePath(ctx, s.points, xPix, yPix);
     ctx.stroke();
+
+    // Average reference line — dotted yellow, drawn under the hover layer
+    // (below) so a hovered crosshair/marker still reads on top of it.
+    const avgY = s.points.reduce((sum, p) => sum + p.y, 0) / s.points.length;
+    const avgPy = yPix(avgY);
+    ctx.save();
+    ctx.strokeStyle = "#ffd60a";
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = "round";
+    ctx.setLineDash([0.1, 6]); // near-zero dash + round cap reads as dots, not dashes
+    ctx.beginPath();
+    ctx.moveTo(padL, avgPy);
+    ctx.lineTo(w - padR, avgPy);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = "#ffd60a";
+    ctx.font = "10px -apple-system, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText("avg " + avgY.toFixed(opts.decimals === undefined ? 1 : opts.decimals) + (opts.unit || ""),
+                 w - padR, avgPy - 4);
+    ctx.textAlign = "left";
   });
 
   // Hover crosshair + point markers + tooltip.

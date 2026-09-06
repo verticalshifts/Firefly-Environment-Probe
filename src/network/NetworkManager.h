@@ -59,6 +59,10 @@ private:
     bool everConnected_ = false;
 
     void connectSTA(bool blockingFirstAttempt);
+    // One full connect attempt: scan (to pick the strongest matching BSSID
+    // and detect WEP), WiFi.begin(), then block up to maxWaitMs waiting for
+    // WL_CONNECTED. Returns true on success. See connectSTA()'s retry loop.
+    bool performConnectAttempt(const DeviceConfig &c, uint32_t maxWaitMs);
     void setupMDNS();
     String deriveApSsid();
     String deriveMdnsHostname();

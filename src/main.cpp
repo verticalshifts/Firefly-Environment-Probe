@@ -10,7 +10,9 @@
 #include "web/WebServerManager.h"
 #include "telemetry/LocalTelemetry.h"
 #include "telemetry/Gen2Telemetry.h"
-#include "hardware/TemperatureIndicator.h"
+#include "hardware/NetworkHealthIndicator.h"
+#include "ota/BootGuard.h"
+#include "ota/OTAUpdateChecker.h"
 #include "util/Logger.h"
 
 // -----------------------------------------------------------------------------
@@ -21,14 +23,16 @@
 
 StorageManager storage;
 ConfigManager configManager(storage);
-EnvironmentManager environment(configManager);
+DeviceManager device(storage, configManager);
+EnvironmentManager environment(configManager, device); // needs device's continuous-uptime clock for history timestamps
 NetworkManager network(configManager);
 NetworkProbe networkProbe(configManager, network);
-DeviceManager device(storage, configManager);
-WebServerManager webServer(configManager, environment, network, networkProbe, device, storage);
+BootGuard bootGuard(storage);
+OTAUpdateChecker otaUpdateChecker(configManager, network); // opt-in, disabled by default (otaCheckEnabled)
+WebServerManager webServer(configManager, environment, network, networkProbe, device, storage, bootGuard, otaUpdateChecker);
 LocalTelemetry telemetry; // Phase 1 stand-in for the future Gen2Telemetry adapter
 Gen2Telemetry gen2Telemetry(configManager, network, device); // opt-in, disabled by default (gen2Enabled)
-TemperatureIndicator tempLed(hw::DEFAULT_TEMP_LED_GPIO);
+NetworkHealthIndicator networkLed(hw::DEFAULT_NETWORK_LED_GPIO, network);
 
 static const char *TAG = "Main";
 
@@ -68,29 +72,53 @@ void setup() {
     if (!storage.begin()) {
         Logger::error(TAG, "Storage init failed — continuing with defaults, changes won't persist");
     }
+    bootGuard.begin();
     configManager.begin();
     device.begin();
     environment.begin();
     network.begin();
     webServer.begin();
-    tempLed.begin();
+    networkLed.begin();
 
     PlatformManager::enableWatchdog(15000);
     Logger::info(TAG, "Setup complete. Device ID " + device.getDeviceId());
 }
+
+// Boot-confirmation health signal for BootGuard (section OTA): Wi-Fi
+// connected continuously for this long is judged "the new firmware is
+// stable" — the cheapest meaningful signal available without new
+// instrumentation, and every real regression found live this session was a
+// WiFi-stability problem, not sensor/logic. See BootGuard.h.
+static unsigned long wifiHealthySinceMs = 0;
+static constexpr unsigned long BOOT_CONFIRM_WIFI_STABLE_MS = 15000;
 
 void loop() {
     PlatformManager::feedWatchdog();
 
     network.loop();
     environment.loop();
+    device.loop();
 
-    tempLed.loop(environment.current().temperature, environment.status() == EnvironmentStatus::OK);
+    bootGuard.loop();
+    if (bootGuard.pendingConfirm()) {
+        if (network.isConnected()) {
+            if (wifiHealthySinceMs == 0) wifiHealthySinceMs = millis();
+            else if (millis() - wifiHealthySinceMs >= BOOT_CONFIRM_WIFI_STABLE_MS) {
+                bootGuard.confirmBootOk();
+            }
+        } else {
+            wifiHealthySinceMs = 0;
+        }
+    }
+
+    networkLed.loop();
 
     if (environment.status() != EnvironmentStatus::NOT_YET_READ) {
         telemetry.publishEnvironment(environment.current(), environment.sensorType());
         gen2Telemetry.publishEnvironment(environment.current(), environment.sensorType());
     }
+
+    otaUpdateChecker.loop();
 
     networkProbe.loop();
     webServer.loop();

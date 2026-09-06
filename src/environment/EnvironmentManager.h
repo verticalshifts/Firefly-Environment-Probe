@@ -10,6 +10,7 @@
 #include <memory>
 #include "EnvironmentSensor.h"
 #include "config/ConfigManager.h"
+#include "device/DeviceManager.h"
 #include "util/CircularLog.h"
 
 // Normalized internal data model (section 32), kept independent of the DHT
@@ -19,7 +20,13 @@ struct EnvironmentReading {
     float temperature = 0.0f;
     float humidity = 0.0f;
     bool valid = false;
-    uint32_t timestamp = 0; // seconds since boot (millis()/1000)
+    // DeviceManager::getContinuousUptimeS() — NOT plain millis()/1000. A
+    // reboot resets millis() but the history ring file on LittleFS survives
+    // it, so a per-boot-relative timestamp here made old and new points
+    // interleave with non-monotonic values after any reboot — confirmed
+    // live as the cause of the dashboard's history charts rendering as
+    // scrambled/crossed lines. See DeviceManager.h's getContinuousUptimeS().
+    uint32_t timestamp = 0;
 };
 
 enum class EnvironmentStatus { OK, SENSOR_ERROR, NOT_YET_READ };
@@ -32,7 +39,7 @@ struct EnvHistoryPoint {
 
 class EnvironmentManager {
 public:
-    explicit EnvironmentManager(ConfigManager &config);
+    EnvironmentManager(ConfigManager &config, DeviceManager &device);
 
     bool begin();
 
@@ -57,6 +64,7 @@ public:
 
 private:
     ConfigManager &config_;
+    DeviceManager &device_;
     std::unique_ptr<EnvironmentSensor> sensor_;
     CircularLog history_;
 

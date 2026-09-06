@@ -128,7 +128,7 @@ was no ESP32/ESP8266 board attached to build this on. Before relying on it:
 | Network | gateway up/down, internet up/down, DNS success/failure, induced packet loss, high latency |
 | Storage | config persists across reboot, history survives reboot, ring wraps correctly once full, factory reset actually clears everything |
 | Dashboard | desktop + mobile layout, all five pages, chart range switching, Settings save round-trip, auth prompt on protected endpoints |
-| OTA | successful update (device boots new firmware), an intentionally corrupt/wrong-platform `.bin` (device reports the error and keeps running the old firmware) |
+| OTA | successful update (device boots new firmware), an intentionally corrupt/wrong-platform `.bin` (device reports the error and keeps running the old firmware), an oversized `.bin` rejected immediately via the `X-File-Size` header, boot-confirmation on a deliberately-broken image (ESP32: auto-reverts; ESP8266: reports `lastFailedToConfirm` and keeps running), GitHub Releases auto-update check + install with a correct checksum, and with a deliberately wrong checksum (must refuse to install, running firmware untouched) |
 | Stability | ≥24h continuous run: no crash, no reset-reason other than the ones you triggered, `freeHeap` stays flat, Wi-Fi and sensor recover from an induced fault without a manual restart |
 
 None of this is optional before treating Phase 1 as production-ready —

@@ -25,7 +25,7 @@ migration step in `ConfigManager::begin()`.
 | `wifiPassword` | string | `""` | Never returned by `GET /api/config` |
 | `useStaticIp` | bool | `false` | |
 | `staticIp` / `staticGateway` / `staticSubnet` / `staticDns` | string | `""` / `""` / `"255.255.255.0"` / `""` | Only used when `useStaticIp` is true |
-| `wifiConnectAttempts` | int | `20` | ~500ms per attempt during the initial blocking connect in `setup()` before falling back to provisioning AP |
+| `wifiConnectAttempts` | int | `3` | Full connect attempts (fresh scan + `WiFi.begin()` each, not polls of one attempt), spread across a fixed ~60s total budget, before falling back to provisioning AP; validated to 1–10 |
 | `authUsername` | string | `"admin"` | Dashboard Basic Auth username |
 | `authPassword` | string | *(auto-generated on first boot)* | Never returned by `GET /api/config`; see `/api/provisioning-info` |
 | `mdnsHostname` | string | `""` | Blank = slugified `deviceName` |
@@ -51,6 +51,8 @@ migration step in `ConfigManager::begin()`.
 | `gen2LicenseKey` | string | `""` | Secret, format `gp_<32 hex chars>` from GEN2's Onboarding tab; never returned by `GET /api/config` |
 | `gen2MonitorName` | string | `""` | Blank = uses `deviceName`; GEN2 auto-creates a monitor with this name on first successful publish |
 | `gen2IntervalS` | int (seconds) | `60` | Minimum spacing between GEN2 HTTPS POSTs, independent of `environmentInterval`; validated to 30–3600 |
+| `otaCheckEnabled` | bool | `false` | Opt-in — periodically checks GitHub Releases for a newer firmware version. Never auto-installs |
+| `otaCheckIntervalS` | int (seconds) | `21600` (6h) | How often to check; validated to 300–604800 (5min–7d) |
 
 ## GEN2 Bullseye integration
 
@@ -89,6 +91,32 @@ long enough to cause measurable WiFi packet loss (confirmed live). See
 `src/telemetry/Gen2Telemetry.h`'s header comment for the full reasoning and
 what it would take to revisit this.
 
+## OTA update checking
+
+When `otaCheckEnabled` is true, the device periodically checks
+`GET https://api.github.com/repos/<owner>/<repo>/releases/latest` (the repo
+is a compile-time constant — `OTA_GITHUB_OWNER`/`OTA_GITHUB_REPO` in
+`platformio.ini` — not a Settings field, so an authenticated config change
+can't redirect the update source) and compares the release tag against the
+compiled `FIRMWARE_VERSION`. **This never installs anything on its own** —
+it only makes an available update visible (Settings banner,
+`GET /api/ota/status`); a human clicks "Install Update" to actually
+trigger `POST /api/ota/install-latest`.
+
+The connection is certificate-verified (`src/ota/GitHubApiRootCA.h`), not
+`setInsecure()` — unlike Gen2Telemetry's tradeoff (justified there because
+a spoofed sensor reading is low-stakes), a MITM'd update-check response
+could point the device at a malicious download, so this stays fully
+verified. The actual firmware download (a *different* host and root —
+`src/ota/GitHubAssetRootCA.h`) is additionally checksum-verified: the
+release description must contain a `SHA256_ESP32:`/`SHA256_ESP8266:` line
+(computed and parsed from the same, already-fetched API response — no
+extra download), and the install endpoint refuses to proceed without one.
+See [release-process.md](release-process.md) for the exact release-authoring
+convention this depends on, and `docs/architecture.md`'s "OTA rollback
+safety" section for what happens if an installed update fails to boot
+cleanly.
+
 ## Validation
 
 `ConfigManager::update()` rejects (with a `400` and no change applied) if:
@@ -101,6 +129,9 @@ what it would take to revisit this.
 - `gen2ServerUrl` would be left empty (a blank submission is silently
   ignored instead, keeping the current value — same convention as
   `gen2LicenseKey`)
+- `otaCheckIntervalS` is outside 300–604800s
+- `wifiSsid` is longer than 32 bytes (a hard 802.11 protocol limit)
+- `wifiConnectAttempts` is outside 1–10
 
 Everything else is accepted as-is — e.g. there's no per-platform GPIO
 allowlist enforced server-side, so double-check
