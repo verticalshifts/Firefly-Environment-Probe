@@ -7,13 +7,15 @@ async function loadEnv() {
     value: envOk ? env.temperature : null,
     errored: !envOk,
     min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
-    label: "Temperature",
+    label: "Temperature", icon: "thermometer", accent: "blue",
+    title: "Temperature", subtitle: "Current Reading",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
     value: envOk ? env.humidity : null,
     errored: !envOk,
     min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
-    label: "Humidity",
+    label: "Humidity", icon: "droplet", accent: "teal",
+    title: "Humidity", subtitle: "Current Reading",
   });
   document.getElementById("mSensor").textContent = env.sensorType;
   document.getElementById("mSensorSub").innerHTML = "";

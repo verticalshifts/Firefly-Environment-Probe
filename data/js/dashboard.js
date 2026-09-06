@@ -13,18 +13,26 @@ async function loadOnce() {
     value: envOk ? status.environment.temperature : null,
     errored: !envOk,
     min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
-    label: "Temperature",
+    label: "Temperature", icon: "thermometer", accent: "blue",
+    title: "Temperature", subtitle: "Ambient Temperature",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
     value: envOk ? status.environment.humidity : null,
     errored: !envOk,
     min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
-    label: "Humidity",
+    label: "Humidity", icon: "droplet", accent: "teal",
+    title: "Humidity", subtitle: "Relative Humidity",
   });
 
-  document.getElementById("mDevice").textContent = status.network.connected ? "ONLINE" : "OFFLINE";
-  document.getElementById("mDeviceSub").textContent =
-    status.network.connected ? status.network.ssid + " · " + status.network.rssi + " dBm" : "Not connected";
+  const online = status.network.connected;
+  const statusText = document.getElementById("deviceStatusText");
+  statusText.textContent = online ? "ONLINE" : "OFFLINE";
+  statusText.className = "device-status-text " + (online ? "online" : "offline");
+  document.getElementById("deviceStatusDot").style.color = online ? "var(--healthy)" : "var(--critical)";
+  document.getElementById("deviceStatusSub").innerHTML =
+    online ? status.network.ssid + "<br>" + status.network.rssi + " dBm" : "Not connected";
+  document.getElementById("wifiRing").classList.toggle("offline", !online);
+  document.getElementById("deviceSignalValue").textContent = online ? status.network.rssi + " dBm" : "—";
 
   const net = await Probe.get("/api/network");
   const rows = net.probes.map((p) => `

@@ -22,18 +22,53 @@
 <main>
   <h1 class="page-title">Dashboard</h1>
   <div class="grid">
-    <div class="card">
-      <h2>Temperature</h2>
-      <div class="gauge-wrap" id="gaugeTemp"></div>
-    </div>
-    <div class="card">
-      <h2>Humidity</h2>
-      <div class="gauge-wrap" id="gaugeHum"></div>
-    </div>
-    <div class="card">
-      <h2>Device</h2>
-      <div class="metric" id="mDevice" style="font-size:var(--fs-heading);">—</div>
-      <div class="metric-sub" id="mDeviceSub">&nbsp;</div>
+    <div class="card" id="gaugeTemp"></div>
+    <div class="card" id="gaugeHum"></div>
+    <div class="card device-card accent-purple" id="deviceCard">
+      <div class="card-head">
+        <div class="card-head-icon">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="7" rx="2"></rect>
+            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+            <circle cx="8" cy="14.5" r="0.6" fill="currentColor" stroke="none"></circle>
+            <circle cx="12" cy="14.5" r="0.6" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </div>
+        <div>
+          <div class="card-head-title">Device</div>
+        </div>
+      </div>
+      <div class="device-body">
+        <div>
+          <div class="device-status-row">
+            <span class="status-dot" id="deviceStatusDot"></span>
+            <span class="device-status-text" id="deviceStatusText">—</span>
+          </div>
+          <div class="device-status-sub" id="deviceStatusSub">&nbsp;</div>
+        </div>
+        <div class="wifi-ring" id="wifiRing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 8.5a16 16 0 0 1 20 0"></path>
+            <path d="M5.5 12.5a11 11 0 0 1 13 0"></path>
+            <path d="M9 16.5a6 6 0 0 1 6 0"></path>
+            <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </div>
+      </div>
+      <div class="info-row info-row-split">
+        <span class="info-row-label">
+          <span class="info-row-icon">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 20V14"></path>
+              <path d="M9.5 20V10"></path>
+              <path d="M15 20V6"></path>
+              <path d="M20.5 20V3"></path>
+            </svg>
+          </span>
+          Signal Strength
+        </span>
+        <span class="info-row-value" id="deviceSignalValue">—</span>
+      </div>
     </div>
   </div>
 

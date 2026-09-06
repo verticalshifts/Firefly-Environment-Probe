@@ -25,6 +25,12 @@
   --critical: #e0503f;
   --offline: #6b7386;
 
+  /* Extra accent hues for per-card icon badges/borders (gauge + device
+     cards) — distinct from --accent so adjacent cards read as visually
+     distinct at a glance, the way the reference dashboard design does. */
+  --accent-teal: #2dd4bf;
+  --accent-purple: #8b7cf6;
+
   --radius: 14px;
 
   /* Glass surface tokens. Two strengths: the ambient one for large chrome
@@ -205,10 +211,98 @@ main {
   color: var(--text-dim);
 }
 
-/* Semicircular dial gauge (js/gauge.js) — three fixed-color comfort bands
-   (low/healthy/high), a neutral needle (never a zone color, so it doesn't
-   compete with the band it's pointing into), and the value as a hero
-   figure underneath. */
+/* Card header used by gauge cards and the Device card alike: a round
+   accent-colored icon badge next to a title/subtitle pair. */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.card-head-icon {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-head-title {
+  font-size: var(--fs-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card-head-subtitle {
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Accent variants: tint the card's border and its header icon badge to
+   match, so each metric reads as a visually distinct unit at a glance.
+   Plain rgba declared first as a color-mix()-unsupported fallback (same
+   pattern as the input focus ring and .card:hover above). */
+.card.accent-blue { border-color: rgba(79, 140, 255, 0.32); }
+.card.accent-blue { border-color: color-mix(in srgb, var(--accent) 32%, var(--glass-border)); }
+.card.accent-blue .card-head-icon { background: rgba(79, 140, 255, 0.16); color: var(--accent); }
+.card.accent-blue .card-head-icon { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+
+.card.accent-teal { border-color: rgba(45, 212, 191, 0.32); }
+.card.accent-teal { border-color: color-mix(in srgb, var(--accent-teal) 32%, var(--glass-border)); }
+.card.accent-teal .card-head-icon { background: rgba(45, 212, 191, 0.16); color: var(--accent-teal); }
+.card.accent-teal .card-head-icon { background: color-mix(in srgb, var(--accent-teal) 16%, transparent); color: var(--accent-teal); }
+
+.card.accent-purple { border-color: rgba(139, 124, 246, 0.32); }
+.card.accent-purple { border-color: color-mix(in srgb, var(--accent-purple) 32%, var(--glass-border)); }
+.card.accent-purple .card-head-icon { background: rgba(139, 124, 246, 0.16); color: var(--accent-purple); }
+.card.accent-purple .card-head-icon { background: color-mix(in srgb, var(--accent-purple) 16%, transparent); color: var(--accent-purple); }
+
+/* A pill-shaped info line living below a gauge or the Device card's status
+   — an icon, a label, and (optionally, via justify-content: space-between
+   on a modifier) a right-aligned value. Deliberately a plain hairline-
+   bordered chip rather than another nested .card (same flatten-don't-nest
+   reasoning as .callout above). */
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--glass-bg-strong);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+}
+
+.info-row-icon {
+  display: flex;
+  flex: none;
+  opacity: 0.8;
+}
+
+.info-row.info-row-split {
+  justify-content: space-between;
+}
+
+.info-row-value {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.info-row-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Semicircular dial gauge (js/gauge.js) — a continuous blue -> green ->
+   orange -> red arc (the same sweep for every metric; only the needle
+   position differs), a neutral needle with a soft color-matched glow at
+   its tip, and the value as a hero figure underneath. */
 .gauge-wrap {
   display: flex;
   flex-direction: column;
@@ -223,10 +317,10 @@ svg.gauge {
   overflow: visible;
 }
 
-.gauge-band-low { stroke: var(--warning); }
-.gauge-band-mid { stroke: var(--healthy); }
-.gauge-band-high { stroke: var(--critical); }
-.gauge-band { stroke-linecap: butt; }
+.gauge-arc-glow {
+  opacity: 0.45;
+  filter: blur(7px);
+}
 
 .gauge-needle {
   stroke: var(--text);
@@ -235,7 +329,12 @@ svg.gauge {
   transition: x2 0.4s ease, y2 0.4s ease;
 }
 
-.gauge-pivot { fill: var(--text); }
+.gauge-needle-glow {
+  filter: blur(5px);
+  transition: cx 0.4s ease, cy 0.4s ease, opacity 0.3s ease;
+}
+
+.gauge-pivot { fill: var(--text-dim); }
 
 .gauge-scale-min, .gauge-scale-max {
   fill: var(--text-dim);
@@ -245,12 +344,103 @@ svg.gauge {
 
 .gauge-value {
   margin-top: 2px;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   /* Proportional (not tabular) figures at hero size — tabular-nums exists
      for columns of aligned numbers, not a single large standalone value. */
   font-variant-numeric: normal;
 }
 
-.gauge-zone-label { margin-top: 6px; }
+.gauge-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.gauge-footer .info-row { width: 100%; justify-content: center; }
+
+/* Device card — status text + a glowing signal ring instead of a dial. */
+.device-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 4px 0 18px;
+}
+
+.device-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.device-status-text {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.device-status-text.online { color: var(--healthy); }
+.device-status-text.offline { color: var(--critical); }
+
+.device-status-sub {
+  margin-top: 10px;
+  font-size: var(--fs-body);
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+/* A soft glow behind the ring via a blurred background layer (not
+   box-shadow — a colored zero-offset box-shadow is its own well-known
+   AI-UI tell, flagged earlier this session as the `dark-glow` finding). */
+.wifi-ring {
+  position: relative;
+  z-index: 0;
+  flex: none;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--healthy);
+  background: rgba(51, 193, 122, 0.1);
+  background: color-mix(in srgb, var(--healthy) 10%, transparent);
+  border: 1px solid rgba(51, 193, 122, 0.35);
+  border: 1px solid color-mix(in srgb, var(--healthy) 35%, transparent);
+}
+
+.wifi-ring.offline {
+  color: var(--critical);
+  background: rgba(224, 80, 63, 0.1);
+  background: color-mix(in srgb, var(--critical) 10%, transparent);
+  border-color: rgba(224, 80, 63, 0.35);
+  border-color: color-mix(in srgb, var(--critical) 35%, transparent);
+}
+
+.wifi-ring::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  z-index: -1;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.16;
+  filter: blur(14px);
+}
+
+.wifi-ring svg { width: 30px; height: 30px; }
 
 .badge {
   display: inline-flex;
