@@ -22,7 +22,23 @@ PingHealthZone NetworkHealthIndicator::classify(bool ok, float latencyMs) {
 void NetworkHealthIndicator::loop() {
     unsigned long now = millis();
 
-    if (network_.isConnected() && (lastPingMs_ == 0 || now - lastPingMs_ >= PING_INTERVAL_MS)) {
+    if (!network_.isConnected()) {
+        if (mode_ != NetworkLedMode::DISCONNECTED) {
+            mode_ = NetworkLedMode::DISCONNECTED;
+            phaseStartMs_ = now;
+            // Reset the streak so a stale pre-disconnect run of bad/degraded
+            // pings can't immediately show a degraded pattern the instant
+            // Wi-Fi comes back, before any fresh pings have actually run.
+            streakZone_ = PingHealthZone::GOOD;
+            streakCount_ = 0;
+            lastPingMs_ = 0; // ping right away on reconnect, don't wait out the old interval
+            Logger::info(TAG, "Mode -> disconnected (no Wi-Fi)");
+        }
+        applyPattern();
+        return;
+    }
+
+    if (lastPingMs_ == 0 || now - lastPingMs_ >= PING_INTERVAL_MS) {
         lastPingMs_ = now;
 
         float latencyMs = 0, lossPct = 0;
@@ -70,6 +86,11 @@ void NetworkHealthIndicator::applyPattern() {
         case NetworkLedMode::FAST_BLINK: {
             unsigned long pos = (millis() - phaseStartMs_) % (FAST_ON_MS + FAST_OFF_MS);
             setLed(pos < FAST_ON_MS);
+            return;
+        }
+        case NetworkLedMode::DISCONNECTED: {
+            unsigned long pos = (millis() - phaseStartMs_) % (DISCONNECTED_ON_MS + DISCONNECTED_OFF_MS);
+            setLed(pos < DISCONNECTED_ON_MS);
             return;
         }
     }

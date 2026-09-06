@@ -7,9 +7,16 @@
 // used to own (this firmware only has the one spare indicator LED wired
 // up). Pattern:
 //
+//   Wi-Fi not connected                     1s on / 5s off
 //   latency <= 59ms                         steady on
 //   60-90ms, sustained 10 consecutive pings  3s on / 1s off
 //   >90ms (or lost), sustained 10 consecutive pings  0.5s on / 0.5s off
+//
+// The disconnected pattern takes priority over everything else — no pings
+// are possible without Wi-Fi, so it's checked first, independent of the
+// consecutive-ping streak machinery below. Reconnecting resets the streak
+// (see loop()) so a stale pre-disconnect streak can't immediately show a
+// degraded pattern before any fresh pings have actually run.
 //
 // "Sustained 10 consecutive" is a real consecutive-run counter, not a
 // sliding window — matches "for 10 consecutive pings" literally, and means
@@ -44,7 +51,7 @@
 #include "network/NetworkManager.h"
 
 enum class PingHealthZone { GOOD, DEGRADED, BAD };
-enum class NetworkLedMode { STEADY_ON, SLOW_BLINK, FAST_BLINK };
+enum class NetworkLedMode { STEADY_ON, SLOW_BLINK, FAST_BLINK, DISCONNECTED };
 
 class NetworkHealthIndicator {
 public:
@@ -63,6 +70,7 @@ private:
     static constexpr float DEGRADED_MAX_MS = 90.0f;
     static constexpr unsigned long SLOW_ON_MS = 3000, SLOW_OFF_MS = 1000;
     static constexpr unsigned long FAST_ON_MS = 500, FAST_OFF_MS = 500;
+    static constexpr unsigned long DISCONNECTED_ON_MS = 1000, DISCONNECTED_OFF_MS = 5000;
 
     unsigned long lastPingMs_ = 0;
     PingHealthZone streakZone_ = PingHealthZone::GOOD;

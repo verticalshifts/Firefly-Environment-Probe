@@ -91,8 +91,9 @@ from, and faster than, `NetworkProbe`'s own 30s ground-probe cycle. This LED
 used to be a `TemperatureIndicator`; that class is gone and temperature is
 no longer shown via LED at all, only via the dashboard's gauge widgets.
 
-| Latency | Pattern |
+| Condition | Pattern |
 |---|---|
+| Wi-Fi not connected | 1s on / 5s off |
 | ≤ 59ms | Steady on |
 | 60–90ms, sustained for 10 consecutive pings | 3s on / 1s off |
 | > 90ms or lost, sustained for 10 consecutive pings | 0.5s on / 0.5s off |
@@ -101,8 +102,11 @@ no longer shown via LED at all, only via the dashboard's gauge widgets.
 a sliding window: a single stray slow or lost ping can't flip the LED into
 a degraded pattern on its own. Steady-on is the default/fallback state —
 recovery back to it is immediate, with no consecutive-good requirement
-symmetric to the two degraded tiers. While Wi-Fi is disconnected, no pings
-are sent and the LED holds whatever pattern it last had.
+symmetric to the two degraded tiers. The disconnected pattern takes
+priority over all of that: no pings are possible without Wi-Fi, so it's
+checked first, and reconnecting resets the consecutive-ping streak so a
+stale pre-disconnect run can't show a degraded pattern before any fresh
+pings have actually happened.
 
 A lost/timed-out ping blocks for the underlying ping library's fixed ~1s
 timeout (neither ESP32Ping nor ESP8266Ping expose a shorter one) — same
