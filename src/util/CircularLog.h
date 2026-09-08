@@ -74,4 +74,9 @@ private:
     bool readHeader(Header &hdr);
     bool writeHeader();
     size_t headerBytes() const { return sizeof(Header); }
+
+    // Creates the parent directory of path_ if it doesn't already exist.
+    // ESP8266's LittleFS auto-creates missing parents on open("w"); ESP32's
+    // (esp_littlefs VFS) does not and the open just fails, so do it explicitly.
+    void ensureParentDir() const;
 };

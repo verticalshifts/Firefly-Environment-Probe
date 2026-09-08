@@ -1,0 +1,15 @@
+# Name,   Type, SubType, Offset,   Size,     Flags
+# Custom 4MB layout for the Firefly Environment Probe on ESP32.
+#
+# Rationale: the stock min_spiffs.csv gives two 1.875MB OTA app slots but only
+# a 128KB filesystem. The dashboard/API assets in data/ (LittleFS) have since
+# grown past ~130KB once LittleFS 4KB-block overhead is counted, so uploadfs
+# overflows a 128KB partition. This table keeps dual-OTA but rebalances to
+# 1.5MB app slots (firmware is ~1.1MB, ~37% headroom for OTA growth) and an
+# ~832KB filesystem, closer in spirit to the ESP8266 build's 1MB FS.
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x180000,
+app1,     app,  ota_1,   0x190000, 0x180000,
+spiffs,   data, spiffs,  0x310000, 0xD0000,
+coredump, data, coredump,0x3E0000, 0x20000,

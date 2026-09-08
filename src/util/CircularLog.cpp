@@ -26,6 +26,15 @@ bool CircularLog::writeHeader() {
     return n == sizeof(Header);
 }
 
+void CircularLog::ensureParentDir() const {
+    int slash = path_.lastIndexOf('/');
+    if (slash <= 0) return; // file at FS root, nothing to create
+    String dir = path_.substring(0, slash);
+    if (!LittleFS.exists(dir)) {
+        LittleFS.mkdir(dir); // no-op/false if it already exists — harmless
+    }
+}
+
 bool CircularLog::begin() {
     Header hdr;
     bool valid = readHeader(hdr) &&
@@ -42,6 +51,7 @@ bool CircularLog::begin() {
 
     // (Re)create the file: header + zeroed record region.
     LittleFS.remove(path_);
+    ensureParentDir();
     File f = LittleFS.open(path_, "w");
     if (!f) {
         Logger::error("CircularLog", "Failed to create " + path_);
