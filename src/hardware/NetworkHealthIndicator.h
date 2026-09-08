@@ -45,6 +45,13 @@
 // brightness control was confirmed live, earlier, to cause real WiFi
 // packet loss (see git history / docs/hardware.md). Not worth reintroducing
 // that risk for an LED that's now binary (on/off), not dimmed.
+//
+// Optional RGB LED: attachRgb() before begin() also drives a 4-pin 5mm RGB
+// LED from the same state machine, showing the tier as a steady colour
+// (no blink code): DISCONNECTED = blue, STEADY_ON = green, SLOW_BLINK =
+// amber, FAST_BLINK = red. Same on/off-only rule — amber is just R+G both
+// on, no PWM. Colour channels are updated whenever the mono LED is
+// rendered, so the two indicators can never disagree.
 // -----------------------------------------------------------------------------
 
 #include <Arduino.h>
@@ -55,7 +62,14 @@ enum class NetworkLedMode { STEADY_ON, SLOW_BLINK, FAST_BLINK, DISCONNECTED };
 
 class NetworkHealthIndicator {
 public:
+    static constexpr uint8_t NO_PIN = 255;
+
     NetworkHealthIndicator(uint8_t gpio, NetworkManager &network);
+
+    // Optional: also drive a 4-pin RGB LED from the same state machine.
+    // Call once before begin(). commonAnode=true inverts each channel (LED
+    // common leg wired to 3V3 instead of GND).
+    void attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode);
 
     void begin();
     void loop();
@@ -63,6 +77,9 @@ public:
 private:
     uint8_t gpio_;
     NetworkManager &network_;
+
+    uint8_t rgbR_ = NO_PIN, rgbG_ = NO_PIN, rgbB_ = NO_PIN;
+    bool rgbCommonAnode_ = false;
 
     static constexpr uint32_t PING_INTERVAL_MS = 10000; // 10s between pings
     static constexpr uint8_t CONSECUTIVE_THRESHOLD = 10;
@@ -82,4 +99,6 @@ private:
     static PingHealthZone classify(bool ok, float latencyMs);
     void applyPattern();
     void setLed(bool on);
+    void applyRgb();                       // maps mode_ -> colour
+    void writeRgb(bool r, bool g, bool b); // honours rgbCommonAnode_
 };

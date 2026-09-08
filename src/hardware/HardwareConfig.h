@@ -14,8 +14,11 @@ namespace hw {
 
 #if defined(PLATFORM_ESP32)
 
-// DHT data line. GPIO4 is safe on ESP32 DevKit boards (not a strapping pin).
-constexpr uint8_t DEFAULT_DHT_GPIO = 4;
+// DHT data line. This board wires the onboard/header DHT11/DHT22 to GPIO15.
+// GPIO15 is an ESP32 strapping pin (must read HIGH at boot to boot from
+// flash / keep the boot log quiet), but the DHT's idle-high data line —
+// held up by its pull-up — satisfies that, so it's safe as the default here.
+constexpr uint8_t DEFAULT_DHT_GPIO = 15;
 
 // Physical factory-reset / provisioning button. GPIO0 doubles as BOOT on most
 // ESP32 dev boards, which is acceptable here because it is only sampled after
@@ -30,6 +33,21 @@ constexpr uint8_t DEFAULT_STATUS_LED_GPIO = 2;
 // MTMS/JTAG on ESP32 but behaves as a plain GPIO whenever JTAG isn't wired
 // up, which is the common case — safe for a simple output LED.
 constexpr uint8_t DEFAULT_NETWORK_LED_GPIO = 14;
+
+// Optional 4-pin 5mm RGB status LED. Driven by the SAME ping state machine
+// as DEFAULT_NETWORK_LED_GPIO above (NetworkHealthIndicator), showing the
+// network-health tier as a steady color instead of a blink code:
+//   no Wi-Fi = blue, <=59ms = green, 60-90ms = amber, >90ms/lost = red.
+// R/G/B on three dedicated GPIOs (25/26/27 — all plain digital outs here;
+// not strapping/flash/input-only pins). One 220-470ohm resistor per colour
+// leg; the common leg goes straight to GND (common cathode) or 3V3 (common
+// anode). Set RGB_LED_COMMON_ANODE true for a common-anode part (long leg
+// to 3V3 — each channel is then lit by driving it LOW).
+#define HAS_RGB_HEALTH_LED 1
+constexpr uint8_t RGB_LED_R_GPIO = 25;
+constexpr uint8_t RGB_LED_G_GPIO = 26;
+constexpr uint8_t RGB_LED_B_GPIO = 27;
+constexpr bool RGB_LED_COMMON_ANODE = false;
 
 constexpr const char *PLATFORM_NAME = "ESP32";
 

@@ -8,9 +8,22 @@ static const IPAddress PING_TARGET(8, 8, 8, 8);
 NetworkHealthIndicator::NetworkHealthIndicator(uint8_t gpio, NetworkManager &network)
     : gpio_(gpio), network_(network) {}
 
+void NetworkHealthIndicator::attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode) {
+    rgbR_ = rPin;
+    rgbG_ = gPin;
+    rgbB_ = bPin;
+    rgbCommonAnode_ = commonAnode;
+}
+
 void NetworkHealthIndicator::begin() {
     pinMode(gpio_, OUTPUT);
-    setLed(true); // steady-on is the default/fallback state — see header comment
+    if (rgbR_ != NO_PIN) {
+        pinMode(rgbR_, OUTPUT);
+        pinMode(rgbG_, OUTPUT);
+        pinMode(rgbB_, OUTPUT);
+    }
+    setLed(true);   // steady-on is the default/fallback state — see header comment
+    applyRgb();     // green (STEADY_ON) is the matching default colour
 }
 
 PingHealthZone NetworkHealthIndicator::classify(bool ok, float latencyMs) {
@@ -74,6 +87,8 @@ void NetworkHealthIndicator::loop() {
 }
 
 void NetworkHealthIndicator::applyPattern() {
+    applyRgb(); // keep the RGB colour in lock-step with the mono LED's mode
+
     switch (mode_) {
         case NetworkLedMode::STEADY_ON:
             setLed(true);
@@ -98,4 +113,21 @@ void NetworkHealthIndicator::applyPattern() {
 
 void NetworkHealthIndicator::setLed(bool on) {
     digitalWrite(gpio_, on ? HIGH : LOW);
+}
+
+void NetworkHealthIndicator::applyRgb() {
+    if (rgbR_ == NO_PIN) return;
+    switch (mode_) {
+        case NetworkLedMode::DISCONNECTED: writeRgb(false, false, true);  return; // blue
+        case NetworkLedMode::STEADY_ON:    writeRgb(false, true,  false); return; // green
+        case NetworkLedMode::SLOW_BLINK:   writeRgb(true,  true,  false); return; // amber
+        case NetworkLedMode::FAST_BLINK:   writeRgb(true,  false, false); return; // red
+    }
+}
+
+void NetworkHealthIndicator::writeRgb(bool r, bool g, bool b) {
+    // Common-cathode: HIGH lights a channel. Common-anode: inverted.
+    digitalWrite(rgbR_, (r != rgbCommonAnode_) ? HIGH : LOW);
+    digitalWrite(rgbG_, (g != rgbCommonAnode_) ? HIGH : LOW);
+    digitalWrite(rgbB_, (b != rgbCommonAnode_) ? HIGH : LOW);
 }

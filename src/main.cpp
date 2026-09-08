@@ -78,6 +78,10 @@ void setup() {
     environment.begin();
     network.begin();
     webServer.begin();
+#ifdef HAS_RGB_HEALTH_LED
+    networkLed.attachRgb(hw::RGB_LED_R_GPIO, hw::RGB_LED_G_GPIO, hw::RGB_LED_B_GPIO,
+                         hw::RGB_LED_COMMON_ANODE);
+#endif
     networkLed.begin();
 
     PlatformManager::enableWatchdog(15000);

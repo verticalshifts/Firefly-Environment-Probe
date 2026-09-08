@@ -28,10 +28,14 @@ boards (the 3-pin blue PCB modules) already include this pull-up.
 ### ESP32 + DHT11/DHT22
 
 ```
-DHT DATA → GPIO4
+DHT DATA → GPIO15
 ```
 
-GPIO4 is not a strapping pin on ESP32 and is safe to use from boot.
+GPIO15 is an ESP32 strapping pin (it must read HIGH at boot to boot from
+flash and keep the boot log quiet). The DHT data line is idle-high through
+its pull-up, which satisfies that, so it is safe as the default on the board
+this firmware targets. If you re-pin to a non-strapping GPIO (e.g. GPIO4,
+GPIO16–33), set `sensorGpio` accordingly in Settings.
 
 ### ESP8266 (NodeMCU/Wemos) + DHT11/DHT22
 
@@ -136,10 +140,11 @@ never dims via PWM on either platform.
 
 ## Flash partitioning
 
-- **ESP32** uses the `min_spiffs.csv` partition table: two ~1.9MB OTA app
-  slots and a 128KB LittleFS partition. The dashboard is a few dozen KB, so
-  128KB leaves comfortable headroom; the trade favors OTA/app space, which
-  is scarcer.
+- **ESP32** uses a custom `partitions_esp32_4mb.csv`: two 1.5MB OTA app
+  slots (~37% headroom over the ~1.1MB firmware) and an ~832KB LittleFS
+  partition. The stock `min_spiffs.csv` was dropped because its 128KB
+  filesystem partition is too small for the current dashboard/API assets
+  once LittleFS 4KB-block overhead is counted (`uploadfs` overflowed it).
 - **ESP8266** uses the board's default `nodemcuv2` layout: two ~1MB OTA
   app slots and roughly 1MB of LittleFS. Check `pio run -t buildfs` output
   if you need the exact current numbers for your framework version.
