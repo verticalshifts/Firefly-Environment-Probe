@@ -8,17 +8,22 @@ async function loadOnce() {
   document.getElementById("hdrDot").style.background =
     status.environment.status === "HEALTHY" && status.network.status === "HEALTHY" ? "var(--healthy)" : "var(--warning)";
 
-  const envOk = status.environment.status === "HEALTHY";
+  // WARNING/CRITICAL are still real readings, just outside the comfort band —
+  // the gauge shows its own zone badge for those. Only blank the value when
+  // there is genuinely nothing to show (sensor faulted, or not read yet).
+  const envStatus = status.environment.status;
+  const sensorErrored = envStatus === "SENSOR_ERROR";
+  const noReading = sensorErrored || envStatus === "OFFLINE";
   Gauge.render(document.getElementById("gaugeTemp"), {
-    value: envOk ? status.environment.temperature : null,
-    errored: !envOk,
+    value: noReading ? null : status.environment.temperature,
+    errored: sensorErrored,
     min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
     label: "Temperature", icon: "thermometer", accent: "blue",
     title: "Temperature", subtitle: "Ambient Temperature",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
-    value: envOk ? status.environment.humidity : null,
-    errored: !envOk,
+    value: noReading ? null : status.environment.humidity,
+    errored: sensorErrored,
     min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
     label: "Humidity", icon: "droplet", accent: "teal",
     title: "Humidity", subtitle: "Relative Humidity",

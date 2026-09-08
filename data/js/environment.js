@@ -2,17 +2,21 @@ let currentRange = "1h";
 
 async function loadEnv() {
   const env = await Probe.get("/api/environment");
-  const envOk = env.status === "HEALTHY";
+  // WARNING/CRITICAL are still real readings, just outside the comfort band —
+  // the gauge shows its own zone badge for those. Only blank the value when
+  // there is genuinely nothing to show (sensor faulted, or not read yet).
+  const sensorErrored = env.status === "SENSOR_ERROR";
+  const noReading = sensorErrored || env.status === "OFFLINE";
   Gauge.render(document.getElementById("gaugeTemp"), {
-    value: envOk ? env.temperature : null,
-    errored: !envOk,
+    value: noReading ? null : env.temperature,
+    errored: sensorErrored,
     min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
     label: "Temperature", icon: "thermometer", accent: "blue",
     title: "Temperature", subtitle: "Current Reading",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
-    value: envOk ? env.humidity : null,
-    errored: !envOk,
+    value: noReading ? null : env.humidity,
+    errored: sensorErrored,
     min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
     label: "Humidity", icon: "droplet", accent: "teal",
     title: "Humidity", subtitle: "Current Reading",
