@@ -40,8 +40,9 @@ struct DeviceConfig {
     // mDNS
     String mdnsHostname = ""; // derived from deviceName if empty
 
-    // Sensor (section 7)
-    String sensorType = "DHT22"; // "DHT11" | "DHT22"
+    // Sensor (section 7). The deployed units use DHT11; override to "DHT22"
+    // in Settings for a board actually fitted with one.
+    String sensorType = "DHT11"; // "DHT11" | "DHT22"
     uint8_t sensorGpio = 0;      // 0 = use platform default
 
     // Sampling intervals (section 21), all in seconds
