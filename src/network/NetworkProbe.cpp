@@ -187,6 +187,14 @@ void NetworkProbe::probeHttp(NetworkProbeResult &r, const String &url) {
 
     HTTPClient http;
     http.setTimeout(timeout);
+#if defined(PLATFORM_ESP32)
+    // On ESP32 setTimeout() governs reads only; without this the TCP connect
+    // to an unreachable host is bounded by the stack's own default, which is
+    // how one probe could overrun probeTimeoutMs by an order of magnitude.
+    // ESP8266's HTTPClient has no equivalent — there setTimeout() is applied
+    // to the client before connect(), so it already covers both.
+    http.setConnectTimeout(timeout);
+#endif
     unsigned long start = millis();
 
     int httpCode = -1;
@@ -194,7 +202,17 @@ void NetworkProbe::probeHttp(NetworkProbeResult &r, const String &url) {
         SecureClient client;
         client.setInsecure(); // Phase 1: reachability/latency check only, not a
                                // certificate-trust decision — see docs/architecture.md.
-#if defined(PLATFORM_ESP8266)
+#if defined(PLATFORM_ESP32)
+        // The TLS handshake needs its own bound — neither setTimeout() nor
+        // setConnectTimeout() covers it, and an unresponsive internal HTTPS
+        // host was measured blocking loop() for 31.5s live, long enough to
+        // starve WiFi servicing and time out the other publishers in the same
+        // window. Deliberately more generous than probeTimeoutMs: a handshake
+        // on this hardware legitimately takes seconds, so bounding it at
+        // 1500ms would fail healthy hosts.
+        uint32_t handshakeMs = timeout > 5000 ? timeout : 5000;
+        client.setHandshakeTimeout((handshakeMs + 999) / 1000); // API takes seconds
+#elif defined(PLATFORM_ESP8266)
         // Same fix as Gen2Telemetry.cpp: BearSSL::WiFiClientSecure defaults
         // to a 16KB+512B buffer, too large a contiguous allocation for this
         // device's small free heap to reliably (or quickly) satisfy against

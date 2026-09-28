@@ -425,10 +425,26 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
                 n++;
             }
         }
+        const uint8_t gen2Kept = n;
+
         for (JsonObjectConst m : updates["monitors"].as<JsonArrayConst>()) {
-            // A client-claimed gen2 flag is ignored outright; the real ones
-            // were already carried over above.
-            if (m["gen2"].is<bool>() && m["gen2"].as<bool>()) continue;
+            if (m["gen2"].is<bool>() && m["gen2"].as<bool>()) {
+                // GEN2 owns a dispatched monitor's identity — name, type,
+                // target — but NOT its latency bar. That is a purely local
+                // display concern GEN2 has no column for and never
+                // dispatches, so leaving it read-only left a legitimately
+                // slow dispatched HTTPS monitor permanently DEGRADED with no
+                // way to tune it. Everything else on this row is discarded.
+                String nm = m["name"].is<const char *>() ? m["name"].as<String>() : String("");
+                for (uint8_t i = 0; i < gen2Kept; i++) {
+                    if (c.monitors[i].name == nm) {
+                        c.monitors[i].latencyHighMs =
+                            m["latencyHighMs"].is<int>() ? (uint16_t)m["latencyHighMs"].as<int>() : 0;
+                        break;
+                    }
+                }
+                continue;
+            }
             if (n >= hw::MAX_MONITORS) {
                 errorOut = "too many monitors (max " + String(hw::MAX_MONITORS) + " on this board)";
                 return false;

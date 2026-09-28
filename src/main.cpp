@@ -114,6 +114,24 @@ void setup() {
 static unsigned long wifiHealthySinceMs = 0;
 static constexpr unsigned long BOOT_CONFIRM_WIFI_STABLE_MS = 15000;
 
+// Services any pending HTTP request. loop() is strictly sequential and
+// nearly every call in it blocks on the network — one TLS POST to GEN2 was
+// measured at 8.5s — so servicing the web server only once at the end let
+// several blocking steps in a single iteration pile up behind each other.
+// Measured live: /api/status has a 39ms median, but collided with publish
+// cycles for 8.2s, and once for a full 25s timeout.
+//
+// handleClient() is cheap when nothing is pending, so calling it between
+// steps costs effectively nothing and bounds a stall to ONE blocking step
+// rather than the whole iteration.
+//
+// This does mean a request can now be handled BETWEEN two steps rather than
+// strictly after all of them. Each step reads config_.get() fresh, so a
+// config change landing mid-iteration is picked up by the remaining steps
+// instead of being missed — but it is a real reordering, so watch for it if
+// something later depends on config being stable across one iteration.
+static inline void serviceWeb() { webServer.loop(); }
+
 void loop() {
     PlatformManager::feedWatchdog();
 
@@ -138,17 +156,22 @@ void loop() {
     if (environment.status() != EnvironmentStatus::NOT_YET_READ) {
         telemetry.publishEnvironment(environment.current(), environment.sensorType());
         gen2Telemetry.publishEnvironment(environment.current(), environment.sensorType());
+        serviceWeb(); // that POST can block for seconds
         // Healthy readings only: the gateway contract has no status field, so
         // a stale last-known-good value during a sensor fault would read as live.
         if (environment.status() == EnvironmentStatus::OK) {
             iotGateway.publishEnvironment(environment.current(), environment.sensorType());
+            serviceWeb();
         }
     }
 
-    otaUpdateChecker.loop();
+    otaUpdateChecker.loop(); // HTTPS to GitHub when a check is due
+    serviceWeb();
     gen2Sync.loop(); // applies monitors GEN2 has dispatched; no-op unless enabled
+    serviceWeb();
 
-    networkProbe.loop();
+    networkProbe.loop(); // one probe per call, but that probe can block
+    serviceWeb();
     // Publishes one monitor's own status per tick; no-op unless
     // gen2PublishMonitors is on.
     gen2Telemetry.publishNetwork(networkProbe.results(), networkProbe.count());

@@ -44,7 +44,7 @@ function monitorRow(m) {
   row.innerHTML = `
     <div class="field-row">
       <div class="field">
-        <label>Name${gen2 ? ' <span class="hint">from GEN2</span>' : ""}</label>
+        <label>Name${gen2 ? ' <span class="hint">from GEN2 — only the latency bar is editable here</span>' : ""}</label>
         <input class="m-name" value="${Probe.esc(m.name || "")}"${dis}>
       </div>
       <div class="field">
@@ -65,7 +65,7 @@ function monitorRow(m) {
     </div>
     <div class="field">
       <label>Slow above (ms)</label>
-      <input class="m-latency" type="number" min="10" max="60000" value="${m.latencyHighMs || ""}"${dis}>
+      <input class="m-latency" type="number" min="10" max="60000" value="${m.latencyHighMs || ""}">
       <span class="hint m-latency-hint">&nbsp;</span>
     </div>
     <p><button type="button" class="m-remove"${dis}>Remove</button></p>`;
@@ -104,23 +104,28 @@ function renderMonitors(monitors) {
   updateMonitorCount();
 }
 
-// GEN2-owned rows are deliberately NOT sent: the firmware re-attaches them
-// from its own config and ignores any the client claims, so including them
-// would be noise at best and a spoofing attempt at worst.
+// A GEN2-owned row is sent as name + latency bar only. The firmware keeps
+// its own copy of everything else and ignores whatever a client claims for
+// those fields, so sending them would be noise at best and a spoofing
+// attempt at worst — but the latency bar IS ours to set.
 function collectMonitors() {
   return Array.from(document.querySelectorAll("#monitorRows .monitor-row"))
-    .filter((row) => row.dataset.gen2 !== "1")
     .map((row) => {
+      const name = row.querySelector(".m-name").value.trim();
+      // 0 is the firmware's "inherit" sentinel, so a blank box means inherit.
+      const latencyHighMs = Number(row.querySelector(".m-latency").value || 0);
+
+      if (row.dataset.gen2 === "1") return { gen2: true, name: name, latencyHighMs: latencyHighMs };
+
       const type = row.querySelector(".m-type").value;
       const m = {
         id: row.dataset.id || "",
-        name: row.querySelector(".m-name").value.trim(),
+        name: name,
         type: type,
         target: row.querySelector(".m-target").value.trim(),
+        latencyHighMs: latencyHighMs,
       };
       if (type === "port") m.port = Number(row.querySelector(".m-port").value || 0);
-      // 0 is the firmware's "inherit" sentinel, so a blank box means inherit.
-      m.latencyHighMs = Number(row.querySelector(".m-latency").value || 0);
       return m;
     })
     .filter((m) => m.name.length > 0);
