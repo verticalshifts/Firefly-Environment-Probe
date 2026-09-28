@@ -49,9 +49,14 @@
 // Optional RGB LED: attachRgb() before begin() also drives a 4-pin 5mm RGB
 // LED from the same state machine, showing the tier as a steady colour
 // (no blink code): DISCONNECTED = blue, STEADY_ON = green, SLOW_BLINK =
-// amber, FAST_BLINK = red. Same on/off-only rule — amber is just R+G both
-// on, no PWM. Colour channels are updated whenever the mono LED is
-// rendered, so the two indicators can never disagree.
+// amber, FAST_BLINK = red (amber = R+G channels both lit). Colour channels
+// are updated whenever the mono LED is rendered, so the two indicators can
+// never disagree. On begin() the RGB LED runs a short POST-style lamp check
+// (red, green, blue in turn, twice) so a dead or mis-wired channel shows up
+// immediately. Unlike the mono LED, the RGB LED IS dimmable: it's
+// ESP32-only, so it uses the LEDC hardware-PWM peripheral (not the ESP8266
+// software analogWrite that caused WiFi packet loss) — brightness is set
+// via the last attachRgb() argument, 0-100%.
 // -----------------------------------------------------------------------------
 
 #include <Arduino.h>
@@ -68,8 +73,10 @@ public:
 
     // Optional: also drive a 4-pin RGB LED from the same state machine.
     // Call once before begin(). commonAnode=true inverts each channel (LED
-    // common leg wired to 3V3 instead of GND).
-    void attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode);
+    // common leg wired to 3V3 instead of GND). brightnessPct (0-100) dims
+    // every colour channel via ESP32 LEDC PWM; 100 = full brightness.
+    void attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode,
+                   uint8_t brightnessPct = 100);
 
     void begin();
     void loop();
@@ -80,6 +87,15 @@ private:
 
     uint8_t rgbR_ = NO_PIN, rgbG_ = NO_PIN, rgbB_ = NO_PIN;
     bool rgbCommonAnode_ = false;
+    uint8_t rgbBrightnessPct_ = 100;
+
+#if defined(PLATFORM_ESP32)
+    // LEDC PWM: one channel per colour, 8-bit duty, ~5kHz (flicker-free,
+    // well below the peripheral's limits for 8-bit resolution).
+    static constexpr uint8_t RGB_CH_R = 0, RGB_CH_G = 1, RGB_CH_B = 2;
+    static constexpr uint32_t RGB_PWM_FREQ = 5000;
+    static constexpr uint8_t RGB_PWM_BITS = 8;
+#endif
 
     static constexpr uint32_t PING_INTERVAL_MS = 10000; // 10s between pings
     static constexpr uint8_t CONSECUTIVE_THRESHOLD = 10;
@@ -96,9 +112,13 @@ private:
     NetworkLedMode mode_ = NetworkLedMode::STEADY_ON;
     unsigned long phaseStartMs_ = 0;
 
+    static constexpr uint8_t RGB_SELFTEST_CYCLES = 2;
+    static constexpr unsigned long RGB_SELFTEST_ON_MS = 150, RGB_SELFTEST_GAP_MS = 60;
+
     static PingHealthZone classify(bool ok, float latencyMs);
     void applyPattern();
     void setLed(bool on);
     void applyRgb();                       // maps mode_ -> colour
     void writeRgb(bool r, bool g, bool b); // honours rgbCommonAnode_
+    void rgbSelfTest();                    // boot lamp check: R,G,B x RGB_SELFTEST_CYCLES
 };

@@ -48,6 +48,10 @@ constexpr uint8_t RGB_LED_R_GPIO = 25;
 constexpr uint8_t RGB_LED_G_GPIO = 26;
 constexpr uint8_t RGB_LED_B_GPIO = 27;
 constexpr bool RGB_LED_COMMON_ANODE = false;
+// RGB LED brightness, 0-100%. Dimmed with the ESP32 LEDC hardware-PWM
+// peripheral — this LED is ESP32-only, so the ESP8266 software-analogWrite
+// WiFi-packet-loss hazard noted on the mono LED does not apply here.
+constexpr uint8_t RGB_LED_BRIGHTNESS_PCT = 10;
 
 constexpr const char *PLATFORM_NAME = "ESP32";
 
@@ -101,6 +105,17 @@ constexpr uint32_t HISTORY_SAMPLE_INTERVAL_S = 60;
 constexpr uint32_t HISTORY_MAX_RECORDS = 10080;
 #elif defined(PLATFORM_ESP8266)
 constexpr uint32_t HISTORY_MAX_RECORDS = 2880;
+#endif
+
+// Upper bound on user-defined / GEN2-dispatched network monitors (see
+// src/network/MonitorDef.h). Each LIVE result carries four Strings, so heap
+// use grows linearly with the count — hence the tighter ESP8266 cap (~80KB
+// RAM total, vs ESP32's ~320KB). The cap also bounds /api/network's response
+// size and config.json's growth, both of which are now user-controlled.
+#if defined(PLATFORM_ESP32)
+constexpr uint8_t MAX_MONITORS = 12;
+#elif defined(PLATFORM_ESP8266)
+constexpr uint8_t MAX_MONITORS = 6;
 #endif
 
 // Provisioning AP SSID override (section 12). The general-purpose default

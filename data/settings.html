@@ -33,7 +33,19 @@
     <fieldset>
       <legend>Wi-Fi</legend>
       <div class="field"><label for="wifiSsid">SSID</label><input id="wifiSsid" name="wifiSsid"></div>
-      <div class="field"><label for="wifiPassword">Password (leave blank to keep current)</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field">
+        <label for="wifiAuthMode">Security</label>
+        <select id="wifiAuthMode" name="wifiAuthMode">
+          <option value="personal">WPA2-Personal</option>
+          <option value="enterprise">WPA2-Enterprise</option>
+        </select>
+      </div>
+      <p class="hint">Personal uses a shared password. Enterprise uses a per-person username + password (common on corporate/campus Wi-Fi).</p>
+      <div class="field" id="wifiPersonalFields"><label for="wifiPassword">Password (leave blank to keep current)</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field-row" id="wifiEnterpriseFields" style="display:none;">
+        <div class="field"><label for="wifiUsername">Username</label><input id="wifiUsername" name="wifiUsername"></div>
+        <div class="field"><label for="wifiEapPassword">Password (leave blank to keep current)</label><input id="wifiEapPassword" name="wifiEapPassword" type="password"></div>
+      </div>
       <div class="field"><label for="wifiConnectAttempts">Connect Attempts (before falling back to setup mode)</label><input id="wifiConnectAttempts" name="wifiConnectAttempts" type="number" min="1" max="10"></div>
       <div class="field">
         <label><input type="checkbox" id="useStaticIp" name="useStaticIp" style="width:auto;display:inline-block;"> Use static IP</label>
@@ -79,16 +91,11 @@
 
     <fieldset>
       <legend>Network Monitoring</legend>
-      <div class="field"><label for="gatewayTarget">Gateway (blank = use DHCP gateway)</label><input id="gatewayTarget" name="gatewayTarget" placeholder="192.168.1.1"></div>
-      <div class="field-row">
-        <div class="field"><label for="pingTarget1">Probe Target 1</label><input id="pingTarget1" name="pingTarget1"></div>
-        <div class="field"><label for="pingTarget2">Probe Target 2</label><input id="pingTarget2" name="pingTarget2"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label for="dnsDomain">DNS Domain</label><input id="dnsDomain" name="dnsDomain"></div>
-        <div class="field"><label for="httpTarget">HTTP/HTTPS URL</label><input id="httpTarget" name="httpTarget"></div>
-      </div>
-      <div class="field-row">
+      <p class="hint">Each monitor is one check the device runs on a loop. Add or remove them freely. Rows marked <em>from GEN2</em> were dispatched by your GEN2 account and can't be edited here — change those in GEN2.</p>
+      <div id="monitorRows"></div>
+      <p class="hint" id="monitorCount">&nbsp;</p>
+      <p><button type="button" id="addMonitorBtn">Add monitor</button></p>
+      <div class="field-row" style="margin-top:14px;">
         <div class="field"><label for="probeTimeoutMs">Probe Timeout (ms)</label><input id="probeTimeoutMs" name="probeTimeoutMs" type="number" min="200" max="10000"></div>
         <div class="field"><label for="probePacketCount">Packet Count</label><input id="probePacketCount" name="probePacketCount" type="number" min="1" max="20"></div>
       </div>
@@ -122,6 +129,25 @@
       <div class="field"><label for="gen2LicenseKey">License Key (leave blank to keep current)</label><input id="gen2LicenseKey" name="gen2LicenseKey" type="password"></div>
       <div class="field"><label for="gen2MonitorName">Monitor Name (blank = use Device Name)</label><input id="gen2MonitorName" name="gen2MonitorName"></div>
       <div class="field"><label for="gen2IntervalS">Post Interval (seconds)</label><input id="gen2IntervalS" name="gen2IntervalS" type="number" min="30" max="3600"></div>
+      <div class="field">
+        <label><input type="checkbox" id="gen2SyncEnabled" name="gen2SyncEnabled" style="width:auto;display:inline-block;"> Sync monitors dispatched from GEN2</label>
+      </div>
+      <div class="field"><label for="gen2SyncIntervalS">Monitor Sync Interval (seconds)</label><input id="gen2SyncIntervalS" name="gen2SyncIntervalS" type="number" min="30" max="3600"></div>
+      <div class="field">
+        <label><input type="checkbox" id="gen2PublishMonitors" name="gen2PublishMonitors" style="width:auto;display:inline-block;"> Publish each monitor's status to GEN2</label>
+      </div>
+      <p class="hint">Sync pulls monitors an admin dispatched for this device's license key and applies them above as read-only rows. Publishing sends each monitor's own status up, which is what makes a locally-added monitor appear on GEN2's dashboard. Both need the Org ID and License Key above. Use one license key per device — GEN2 gives each dispatched job to a single device, so two devices sharing a key will take each other's.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Firefly-CAP100 IoT Gateway</legend>
+      <p class="hint">Optional secondary path: send readings to a Firefly-CAP100 IoT Gateway on your LAN, which buffers them and forwards to GEN2. Works alongside direct GEN2 publishing above — if the gateway also forwards to GEN2, enabling both reports each reading twice. Get the ingest URL and token from HUB &gt; IoT Gateway on the CAP100.</p>
+      <div class="field">
+        <label><input type="checkbox" id="iotgwEnabled" name="iotgwEnabled" style="width:auto;display:inline-block;"> Enable IoT Gateway publishing</label>
+      </div>
+      <div class="field"><label for="iotgwUrl">Ingest URL</label><input id="iotgwUrl" name="iotgwUrl" placeholder="http://192.168.0.24/ajax/iotgw/ingest.php"></div>
+      <div class="field"><label for="iotgwToken">Device Token (leave blank to keep current)</label><input id="iotgwToken" name="iotgwToken" type="password" placeholder="iot_…" autocomplete="off"></div>
+      <div class="field"><label for="iotgwIntervalS">Post Interval (seconds)</label><input id="iotgwIntervalS" name="iotgwIntervalS" type="number" min="10" max="3600"></div>
     </fieldset>
 
     <fieldset>

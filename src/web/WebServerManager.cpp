@@ -32,6 +32,35 @@ static String hostFromUrl(const String &url) {
     return host;
 }
 
+// Minimal JSON string escaper for the hand-streamed endpoints. Monitor names,
+// targets and `extra` strings are user-supplied now, so they can contain
+// quotes, backslashes or control characters that would otherwise emit
+// malformed JSON. ArduinoJson does this for us on the endpoints that still
+// use it; the streamed ones have to do it themselves.
+static String jsonEscape(const String &s) {
+    String out;
+    out.reserve(s.length() + 8);
+    for (size_t i = 0; i < s.length(); i++) {
+        char ch = s[i];
+        switch (ch) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:
+                if ((uint8_t)ch < 0x20) {
+                    char u[8];
+                    snprintf(u, sizeof(u), "\\u%04x", (unsigned)(uint8_t)ch);
+                    out += u;
+                } else {
+                    out += ch;
+                }
+        }
+    }
+    return out;
+}
+
 static String toHex(const uint8_t *bytes, size_t len) {
     static const char *hexDigits = "0123456789abcdef";
     String out;
@@ -62,19 +91,41 @@ static String classifyEnvironment(const EnvironmentReading &r, EnvironmentStatus
     return "WARNING";
 }
 
-static String classifyProbeTarget(const NetworkProbeResult &r, const DeviceConfig &c) {
+// `m` is the monitor's definition, which carries its latency bar. It is null
+// only if results and definitions have momentarily diverged, in which case the
+// global threshold is the safe fallback.
+static String classifyProbeTarget(const NetworkProbeResult &r, const DeviceConfig &c, const MonitorDef *m) {
     if (!r.everRun) return "OFFLINE";
     if (!r.reachable) return "DOWN";
-    if (r.packetLossPercent > c.packetLossHighPct || r.latencyMs > c.latencyHighMs) return "DEGRADED";
+    // Per-monitor override, else the per-type default, else the global
+    // threshold — see resolveLatencyHighMs() in MonitorDef.h for why an
+    // HTTPS check can't be held to the same bar as a ping.
+    float highMs = m ? resolveLatencyHighMs(*m, c.latencyHighMs) : c.latencyHighMs;
+    if (r.packetLossPercent > c.packetLossHighPct || r.latencyMs > highMs) return "DEGRADED";
     return "UP";
 }
 
+// Worst status across every configured monitor. This used to read the Gateway
+// probe alone, which is no longer guaranteed to exist now that the monitor
+// list is fully user-managed and every entry is deletable.
 static String classifyOverallNetwork(NetworkManager &net, NetworkProbe &probe, const DeviceConfig &c) {
     if (!net.isConnected()) return "OFFLINE";
     if (net.getRSSI() != 0 && net.getRSSI() < c.rssiLowDbm) return "WARNING";
-    String gw = classifyProbeTarget(probe.result(ProbeId::GATEWAY), c);
-    if (gw == "DOWN") return "CRITICAL";
-    if (gw == "DEGRADED") return "WARNING";
+
+    bool anyDown = false, anyDegraded = false;
+    for (size_t i = 0; i < probe.count(); i++) {
+        const MonitorDef *m = (i < c.monitorCount) ? &c.monitors[i] : nullptr;
+        String s = classifyProbeTarget(probe.result(i), c, m);
+        if (s == "DOWN") anyDown = true;
+        else if (s == "DEGRADED") anyDegraded = true;
+        // OFFLINE ("never run yet") is deliberately not a fault: it only means
+        // the first probe round hasn't completed, and must not report the
+        // device as broken for the first networkIntervalS after every boot.
+    }
+    if (anyDown) return "CRITICAL";
+    if (anyDegraded) return "WARNING";
+    // Either nothing is in trouble, or there are no monitors at all — in both
+    // cases nothing is reporting a problem.
     return "HEALTHY";
 }
 
@@ -287,34 +338,53 @@ void WebServerManager::handleApiEnvironment() {
 void WebServerManager::handleApiNetwork() {
     const DeviceConfig &c = config_.get();
 
-    JsonDocument doc;
-    JsonObject wifi = doc["wifi"].to<JsonObject>();
-    wifi["ssid"] = network_.getSSID();
-    wifi["ip"] = network_.getIPAddress();
-    wifi["gateway"] = network_.getGatewayIP();
-    wifi["rssi"] = network_.getRSSI();
-    wifi["channel"] = network_.getChannel();
-    wifi["connected"] = network_.isConnected();
-    wifi["reconnectCount"] = network_.getReconnectCount();
-    wifi["provisioning"] = network_.isProvisioning();
-    wifi["apSsid"] = network_.getApSSID();
+    // Hand-built and streamed rather than one in-RAM ArduinoJson document:
+    // the monitor list is user-controlled (bounded only by hw::MAX_MONITORS),
+    // so this response is no longer a fixed small size. Same reasoning and
+    // shape as handleApiHistory() below — see docs/architecture.md's memory
+    // budget section.
+    server_.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server_.send(200, "application/json", "");
 
-    JsonArray probes = doc["probes"].to<JsonArray>();
-    ProbeId ids[] = {ProbeId::GATEWAY, ProbeId::PING_1, ProbeId::PING_2, ProbeId::DNS, ProbeId::HTTP};
-    for (ProbeId id : ids) {
-        const NetworkProbeResult &r = probe_.result(id);
-        JsonObject o = probes.add<JsonObject>();
-        o["label"] = r.label;
-        o["target"] = r.target;
-        o["reachable"] = r.reachable;
-        o["latencyMs"] = r.latencyMs;
-        o["packetLossPercent"] = r.packetLossPercent;
-        o["lastProbeSecondsAgo"] = r.everRun ? (millis() / 1000 - r.timestamp) : (uint32_t)0;
-        o["status"] = classifyProbeTarget(r, c);
-        o["extra"] = r.extra;
+    String wifi = "{\"wifi\":{";
+    wifi += "\"ssid\":\"" + jsonEscape(network_.getSSID()) + "\",";
+    wifi += "\"ip\":\"" + jsonEscape(network_.getIPAddress()) + "\",";
+    wifi += "\"gateway\":\"" + jsonEscape(network_.getGatewayIP()) + "\",";
+    wifi += "\"rssi\":" + String(network_.getRSSI()) + ",";
+    wifi += "\"channel\":" + String(network_.getChannel()) + ",";
+    wifi += String("\"connected\":") + (network_.isConnected() ? "true" : "false") + ",";
+    wifi += "\"reconnectCount\":" + String(network_.getReconnectCount()) + ",";
+    wifi += String("\"provisioning\":") + (network_.isProvisioning() ? "true" : "false") + ",";
+    wifi += "\"apSsid\":\"" + jsonEscape(network_.getApSSID()) + "\"";
+    wifi += "},\"probes\":[";
+    server_.sendContent(wifi);
+
+    uint32_t nowS = millis() / 1000;
+    for (size_t i = 0; i < probe_.count(); i++) {
+        const NetworkProbeResult &r = probe_.result(i);
+        // Type, ownership and the latency bar come from the definition, which
+        // NetworkProbe keeps in the same order as its results.
+        const MonitorDef *m = (i < c.monitorCount) ? &c.monitors[i] : nullptr;
+        String o = (i > 0) ? "," : "";
+        o += "{\"id\":\"" + jsonEscape(r.monitorId) + "\",";
+        o += "\"label\":\"" + jsonEscape(r.label) + "\",";
+        o += "\"target\":\"" + jsonEscape(r.target) + "\",";
+        if (m) {
+            o += "\"type\":\"" + String(monitorTypeName(m->type)) + "\",";
+            o += String("\"gen2\":") + (m->gen2Owned ? "true" : "false") + ",";
+            // The bar actually applied, after override/type/global resolution,
+            // so the UI can explain a DEGRADED without re-deriving the rule.
+            o += "\"latencyHighMs\":" + String(resolveLatencyHighMs(*m, c.latencyHighMs), 0) + ",";
+        }
+        o += String("\"reachable\":") + (r.reachable ? "true" : "false") + ",";
+        o += "\"latencyMs\":" + String(r.latencyMs, 1) + ",";
+        o += "\"packetLossPercent\":" + String(r.packetLossPercent, 1) + ",";
+        o += "\"lastProbeSecondsAgo\":" + String(r.everRun ? (nowS - r.timestamp) : (uint32_t)0) + ",";
+        o += "\"status\":\"" + classifyProbeTarget(r, c, m) + "\",";
+        o += "\"extra\":\"" + jsonEscape(r.extra) + "\"}";
+        server_.sendContent(o);
     }
-
-    sendJson(200, doc);
+    server_.sendContent("]}");
 }
 
 void WebServerManager::handleApiHistory() {
@@ -377,7 +447,11 @@ void WebServerManager::handleApiConfigPost() {
         return;
     }
 
-    bool wifiChanged = doc["wifiSsid"].is<const char *>();
+    bool wifiChanged = doc["wifiSsid"].is<const char *>() ||
+                        doc["wifiPassword"].is<const char *>() ||
+                        doc["wifiAuthMode"].is<const char *>() ||
+                        doc["wifiUsername"].is<const char *>() ||
+                        doc["wifiEapPassword"].is<const char *>();
     bool sensorChanged = doc["sensorType"].is<const char *>() || doc["sensorGpio"].is<int>();
 
     String err;

@@ -194,9 +194,105 @@ bool Gen2Telemetry::postEnvironment(const EnvironmentReading &reading) {
 }
 
 bool Gen2Telemetry::publishNetwork(const NetworkProbeResult results[], size_t count) {
-    (void)results;
-    (void)count;
-    // Out of scope for now — see Gen2Telemetry.h.
+    const DeviceConfig &c = config_.get();
+    // Syncing monitors down from GEN2 implies reporting them back up. GEN2
+    // marks any probe DOWN once nothing has reported on it for
+    // expected_interval + grace (~90s at its 60s default, see the staleness
+    // checker in storage.ts), so a dispatched monitor the device never
+    // publishes is guaranteed to alarm as DOWN. "Sync on, publish off" is an
+    // invalid state that only produces false alerts, so sync enables
+    // publishing rather than letting the two disagree.
+    if (!c.gen2PublishMonitors && !c.gen2SyncEnabled) return true;
+    if (count == 0) return true;
+    if (!network_.isConnected()) return true;
+
+    // One monitor per tick, evenly spaced across gen2IntervalS, so each
+    // monitor reports once per interval without ever firing `count`
+    // blocking TLS POSTs back to back — and so a device with a full monitor
+    // list stays well under GEN2's probeLimiter (120 requests/min, keyed by
+    // IP and therefore shared by every device behind the same NAT).
+    unsigned long now = millis();
+    uint32_t spacingMs = (c.gen2IntervalS * 1000UL) / count;
+    if (spacingMs < 1000) spacingMs = 1000; // never hammer, however many monitors
+    if (lastMonitorPostMs_ != 0 && (now - lastMonitorPostMs_ < spacingMs)) return true;
+    lastMonitorPostMs_ = now;
+
+    if (monitorCursor_ >= count) monitorCursor_ = 0;
+    const NetworkProbeResult &r = results[monitorCursor_];
+    monitorCursor_ = (monitorCursor_ + 1) % count;
+
+    // Nothing meaningful to say about a monitor that hasn't run yet; skip it
+    // rather than inventing a DOWN that GEN2 would alert on. Logged because a
+    // monitor stuck in this state never reaches GEN2 at all, which otherwise
+    // looks identical to a publishing failure.
+    if (!r.everRun) {
+        Logger::info(TAG, "Monitor \"" + r.label + "\" not published yet (no probe result)");
+        return true;
+    }
+
+    return postMonitor(r);
+}
+
+// Posts ONE monitor's own status under its own name. GEN2 auto-creates a
+// probes row the first time it sees an unknown monitor name, which is exactly
+// what makes a locally-added monitor appear on the GEN2 dashboard.
+//
+// Consequence worth knowing: once a monitor is visible in GEN2, an admin can
+// dispatch a "remove" for it, and Gen2MonitorSync will honour that by
+// deleting it locally.
+bool Gen2Telemetry::postMonitor(const NetworkProbeResult &r) {
+    const DeviceConfig &c = config_.get();
+
+    JsonDocument doc;
+    doc["license_key"] = c.gen2LicenseKey;
+    doc["org_id"] = c.gen2OrgId;
+    doc["monitor"] = r.label;
+    doc["status"] = r.reachable ? "UP" : "DOWN";
+    doc["server_id"] = device_.getDeviceId();
+    doc["target"] = r.target;
+    doc["latency_ms"] = r.latencyMs;
+
+    String body;
+    serializeJson(doc, body);
+
+    HTTPClient http;
+    http.setTimeout(c.probeTimeoutMs);
+
+    SecureClient client;
+    client.setInsecure(); // same trade-off as postEnvironment — see the header
+
+    String host = extractHost(c.gen2ServerUrl);
+#if defined(PLATFORM_ESP8266)
+    if (SecureClient::probeMaxFragmentLength(host, 443, 1024)) {
+        client.setBufferSizes(1024, 512);
+    }
+#endif
+
+    String url = buildGen2Url(c.gen2ServerUrl);
+    if (!http.begin(client, url)) {
+        Logger::warn(TAG, "Failed to begin monitor beacon for " + r.label);
+        return false;
+    }
+    http.addHeader("Content-Type", "application/json");
+
+    int httpCode = http.POST(body);
+    http.end();
+
+    if (httpCode == 429) {
+        // GEN2's per-probe throttle: it wants this monitor reported less
+        // often than we tried. Harmless — the next cycle will be in time.
+        Logger::info(TAG, "Monitor " + r.label + " beacon throttled by GEN2 (429)");
+        return false;
+    }
+    if (httpCode != 200) {
+        Logger::warn(TAG, "Monitor " + r.label + " beacon returned HTTP " + String(httpCode));
+        return false;
+    }
+    // Logged on success too: without this, "is this monitor reaching GEN2?"
+    // is unanswerable from the serial log, since silence covers both "sent
+    // fine" and "never attempted".
+    Logger::info(TAG, "Monitor \"" + r.label + "\" published to GEN2 (" +
+                          (r.reachable ? "UP" : "DOWN") + ")");
     return true;
 }
 

@@ -12,6 +12,12 @@ async function loadInfo() {
 
 const numericFields = new Set(["sensorGpio"]);
 
+document.getElementById("wifiAuthMode").addEventListener("change", (e) => {
+  const enterprise = e.target.value === "enterprise";
+  document.getElementById("wifiPersonalFields").style.display = enterprise ? "none" : "";
+  document.getElementById("wifiEnterpriseFields").style.display = enterprise ? "" : "none"; // "" restores .field-row's own `display: grid`
+});
+
 document.getElementById("provisionForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("formStatus");

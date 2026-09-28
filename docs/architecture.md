@@ -201,8 +201,24 @@ that changes device state or reveals configuration (`/api/config` GET
 *and* POST, `/api/restart`, `/api/factory-reset`, `/api/ota`,
 `/api/ota/check-now`, `/api/ota/install-latest`) requires HTTP Basic Auth
 against `authUsername`/`authPassword` in config. `GET /api/config` redacts
-`wifiPassword` and `authPassword` even though the request is authenticated,
-so the current values are never round-tripped back to the browser.
+`wifiPassword`, `authPassword`, and `wifiEapPassword` even though the
+request is authenticated, so the current values are never round-tripped
+back to the browser. `wifiUsername` (the WPA2-Enterprise identity/username)
+is *not* redacted — like `authUsername`, it isn't a secret.
+
+**WPA2-Enterprise trade-offs** (see `NetworkManager::performConnectAttempt()`):
+neither platform validates the RADIUS/authentication server's certificate —
+ESP32's `WiFi.begin(..., WPA2_AUTH_PEAP, ...)` call passes `ca_pem=NULL`,
+and the ESP8266 path (below) has no certificate plumbing wired up at all —
+so the device trusts any AP/server claiming the configured SSID, the same
+class of MITM trade-off already accepted for `gen2LicenseKey` above. Only
+PEAP/MSCHAPv2 is supported, not EAP-TLS/TTLS or WPA3-Enterprise. On ESP8266
+specifically, Enterprise auth is implemented via raw NONOS SDK C calls
+(`wifi_station_set_wpa2_enterprise_*`) rather than any Arduino-supported
+API — the Arduino-ESP8266 core has no Enterprise wrapper at all, unlike
+ESP32's `esp_wpa2.h`. This is a known community pattern, not an
+Espressif-supported one, and should be re-verified on real hardware after
+any ESP8266 platform/core version bump in `platformio.ini`.
 
 A dashboard password is auto-generated on first boot rather than shipping
 one fixed default, and is only ever readable, unauthenticated, from
@@ -239,6 +255,13 @@ cutover — see `docs/configuration.md`'s GEN2 fields for what it does and
 doesn't send. GEN2's backend does persist `temperature`/`humidity`, but
 only renders them on a monitor's own detail/history page, not the general
 monitor list — see `docs/configuration.md`'s GEN2 section.
+
+A third provider, `src/telemetry/IotGatewayTelemetry.h/.cpp`, adds a
+secondary path to a Firefly-CAP100 IoT Gateway on the LAN
+(`POST <iotgwUrl>` with a bearer token), which buffers and forwards to GEN2
+itself. It runs alongside `Gen2Telemetry`, not instead of it; both are
+independently opt-in (`iotgwEnabled`, `gen2Enabled`), and the gateway token
+is redacted from `GET /api/config` like the other secrets.
 
 ## OTA rollback safety (ESP32 vs. ESP8266)
 

@@ -42,7 +42,7 @@ async function loadOnce() {
   const net = await Probe.get("/api/network");
   const rows = net.probes.map((p) => `
     <tr>
-      <td>${p.label}<div class="hint">${p.target || ""}</div></td>
+      <td>${Probe.esc(p.label)}<div class="hint">${Probe.esc(p.target || "")}</div></td>
       <td></td>
       <td class="num">${p.reachable ? Probe.fmt(p.latencyMs, 1) + " ms" : "—"}</td>
       <td class="num">${Probe.fmt(p.packetLossPercent, 0)}%</td>

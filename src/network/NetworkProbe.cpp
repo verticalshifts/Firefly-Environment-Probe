@@ -30,46 +30,90 @@ static String extractHost(const String &url) {
 #endif
 
 NetworkProbe::NetworkProbe(ConfigManager &config, NetworkManager &network)
-    : config_(config), network_(network) {
-    results_[(uint8_t)ProbeId::GATEWAY].label = "Gateway";
-    results_[(uint8_t)ProbeId::PING_1].label = "Probe Target 1";
-    results_[(uint8_t)ProbeId::PING_2].label = "Probe Target 2";
-    results_[(uint8_t)ProbeId::DNS].label = "DNS";
-    results_[(uint8_t)ProbeId::HTTP].label = "HTTP/HTTPS";
+    : config_(config), network_(network) {}
+
+void NetworkProbe::syncWithConfig() {
+    const DeviceConfig &c = config_.get();
+
+    NetworkProbeResult rebuilt[hw::MAX_MONITORS];
+    unsigned long rebuiltLast[hw::MAX_MONITORS] = {0};
+
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        const MonitorDef &m = c.monitors[i];
+        // Carry over this monitor's existing result, matched by id, so
+        // editing or deleting one monitor doesn't blank everything else's
+        // last-known state.
+        for (size_t j = 0; j < count_; j++) {
+            if (results_[j].monitorId.length() > 0 && results_[j].monitorId == m.id) {
+                rebuilt[i] = results_[j];
+                rebuiltLast[i] = lastRunMs_[j];
+                break;
+            }
+        }
+        rebuilt[i].monitorId = m.id;
+        rebuilt[i].label = m.name; // a rename should show immediately
+    }
+
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        results_[i] = rebuilt[i];
+        lastRunMs_[i] = rebuiltLast[i];
+    }
+    for (uint8_t i = c.monitorCount; i < hw::MAX_MONITORS; i++) {
+        results_[i] = NetworkProbeResult();
+        lastRunMs_[i] = 0;
+    }
+
+    count_ = c.monitorCount;
+    if (count_ == 0 || cursor_ >= count_) cursor_ = 0;
+    generation_ = config_.monitorsGeneration();
 }
 
 void NetworkProbe::loop() {
-    if (!network_.isConnected()) return; // nothing meaningful to probe in AP/provisioning mode
+    // Cheap integer compare every tick; the rebuild only runs when the user
+    // (or GEN2 sync) actually changed the list.
+    if (config_.monitorsGeneration() != generation_) syncWithConfig();
 
-    uint32_t intervalMs = config_.get().networkIntervalS * 1000UL;
+    if (!network_.isConnected()) return; // nothing meaningful to probe in AP/provisioning mode
+    if (count_ == 0) return;             // no monitors configured
+
+    const DeviceConfig &c = config_.get();
+    uint32_t intervalMs = c.networkIntervalS * 1000UL;
     unsigned long now = millis();
 
-    for (uint8_t i = 0; i < (uint8_t)ProbeId::COUNT; i++) {
-        uint8_t idx = (cursor_ + i) % (uint8_t)ProbeId::COUNT;
+    for (size_t i = 0; i < count_; i++) {
+        size_t idx = (cursor_ + i) % count_;
         bool due = (lastRunMs_[idx] == 0) || (now - lastRunMs_[idx] >= intervalMs);
         if (due) {
             lastRunMs_[idx] = now;
-            cursor_ = (idx + 1) % (uint8_t)ProbeId::COUNT;
-            runProbe((ProbeId)idx);
+            cursor_ = (idx + 1) % count_;
+            runProbe(idx, c.monitors[idx]);
             return; // at most one probe per loop() call
         }
     }
 }
 
-void NetworkProbe::runProbe(ProbeId id) {
-    NetworkProbeResult &r = results_[(uint8_t)id];
+void NetworkProbe::runProbe(size_t idx, const MonitorDef &m) {
+    NetworkProbeResult &r = results_[idx];
     unsigned long wallStart = millis(); // wraps whichever probe fn's own
                                          // internal timing, for a
                                          // diagnostic view of how long each
                                          // probe type actually blocks loop()
-    switch (id) {
-        case ProbeId::GATEWAY: probeGateway(r); break;
-        case ProbeId::PING_1:  probePing(r, config_.get().pingTarget1); break;
-        case ProbeId::PING_2:  probePing(r, config_.get().pingTarget2); break;
-        case ProbeId::DNS:     probeDns(r); break;
-        case ProbeId::HTTP:    probeHttp(r); break;
-        default: break;
+
+    switch (m.type) {
+        case MonitorType::PING: {
+            // A blank ping target still means "the DHCP-learned gateway" —
+            // that is how the old fixed Gateway probe behaved, and the
+            // migrated Gateway monitor relies on it.
+            String target = m.target;
+            if (target.length() == 0) target = network_.getGatewayIP();
+            probePing(r, target);
+            break;
+        }
+        case MonitorType::DNS:  probeDns(r, m.target); break;
+        case MonitorType::HTTP: probeHttp(r, m.target); break;
+        case MonitorType::PORT: probePort(r, m.target, m.port); break;
     }
+
     r.everRun = true;
     r.timestamp = millis() / 1000;
 
@@ -81,21 +125,28 @@ void NetworkProbe::runProbe(ProbeId id) {
     }
 }
 
-void NetworkProbe::probeGateway(NetworkProbeResult &r) {
-    String target = config_.get().gatewayTarget;
-    if (target.length() == 0) target = network_.getGatewayIP();
-    probePing(r, target);
-}
-
 void NetworkProbe::probePing(NetworkProbeResult &r, const String &target) {
     r.target = target;
-    IPAddress ip;
-    if (target.length() == 0 || !ip.fromString(target)) {
+
+    if (target.length() == 0) {
         r.reachable = false;
         r.latencyMs = 0;
         r.packetLossPercent = 100;
-        r.extra = "invalid target";
+        r.extra = "no target";
         return;
+    }
+
+    IPAddress ip;
+    if (!ip.fromString(target)) {
+        // The old fixed probes only ever pinged literal IPs, but a monitor
+        // GEN2 dispatches can name a host, so resolve before giving up.
+        if (WiFi.hostByName(target.c_str(), ip) != 1) {
+            r.reachable = false;
+            r.latencyMs = 0;
+            r.packetLossPercent = 100;
+            r.extra = "cannot resolve";
+            return;
+        }
     }
 
     float avgMs = 0, lossPct = 0;
@@ -112,8 +163,7 @@ void NetworkProbe::probePing(NetworkProbeResult &r, const String &target) {
     }
 }
 
-void NetworkProbe::probeDns(NetworkProbeResult &r) {
-    String domain = config_.get().dnsDomain;
+void NetworkProbe::probeDns(NetworkProbeResult &r, const String &domain) {
     r.target = domain;
 
     IPAddress resolved;
@@ -129,8 +179,7 @@ void NetworkProbe::probeDns(NetworkProbeResult &r) {
     if (!ok) Logger::warn(TAG, "DNS resolution failed for " + domain);
 }
 
-void NetworkProbe::probeHttp(NetworkProbeResult &r) {
-    String url = config_.get().httpTarget;
+void NetworkProbe::probeHttp(NetworkProbeResult &r, const String &url) {
     r.target = url;
 
     bool https = url.startsWith("https://");
@@ -175,4 +224,33 @@ void NetworkProbe::probeHttp(NetworkProbeResult &r) {
     r.extra = r.reachable ? String("HTTP ") + httpCode : String("no response");
 
     if (!r.reachable) Logger::warn(TAG, "HTTP probe failed for " + url);
+}
+
+void NetworkProbe::probePort(NetworkProbeResult &r, const String &host, uint16_t port) {
+    r.target = host + ":" + String(port);
+
+    uint32_t timeout = config_.get().probeTimeoutMs;
+    WiFiClient client;
+
+    unsigned long start = millis();
+#if defined(PLATFORM_ESP32)
+    // ESP32's WiFiClient takes the connect timeout as an explicit argument;
+    // its setTimeout() is in seconds, which would silently round 1500ms to 1s.
+    bool ok = client.connect(host.c_str(), port, (int32_t)timeout);
+#else
+    // ESP8266's setTimeout() is milliseconds and applies to connect().
+    client.setTimeout(timeout);
+    bool ok = client.connect(host.c_str(), port);
+#endif
+    unsigned long elapsed = millis() - start;
+    client.stop();
+
+    r.reachable = ok;
+    r.latencyMs = (float)elapsed;
+    r.packetLossPercent = ok ? 0 : 100;
+    // "open" means the TCP handshake completed — it says nothing about what
+    // is listening there, same spirit as the HTTP probe's any-response rule.
+    r.extra = ok ? String("open") : String("closed/unreachable");
+
+    if (!ok) Logger::warn(TAG, "Port probe failed for " + r.target);
 }

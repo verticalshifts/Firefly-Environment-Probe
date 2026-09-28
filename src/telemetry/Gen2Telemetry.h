@@ -59,5 +59,11 @@ private:
 
     unsigned long lastPostMs_ = 0;
 
+    // Round-robin state for per-monitor beacons: one monitor is published per
+    // tick so `count` blocking TLS POSTs never fire back to back.
+    unsigned long lastMonitorPostMs_ = 0;
+    size_t monitorCursor_ = 0;
+
     bool postEnvironment(const EnvironmentReading &reading);
+    bool postMonitor(const NetworkProbeResult &r);
 };

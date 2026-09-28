@@ -101,6 +101,19 @@ No auth.
 Each probe's `status` is `UP | DEGRADED | DOWN | OFFLINE` (`OFFLINE` = never
 run yet, e.g. right after boot).
 
+The `probes` array is now the user's configured monitor list, not a fixed
+five, so it can have any length from 0 to `MAX_MONITORS` (12 on ESP32, 6 on
+ESP8266). Each entry carries three extra fields alongside those shown above:
+`id` (the monitor's stable id), `type` (`ping` | `dns` | `http` | `port`) and
+`gen2` (true if GEN2 dispatched it, meaning it's read-only on the device), and
+`latencyHighMs` (the resolved "slow above" bar actually applied to that
+monitor, after its own override, the per-type default and the global threshold
+have been considered in that order).
+See [configuration.md](configuration.md)'s "Network monitors" section.
+
+This response is **streamed** rather than built as one in-RAM JSON document,
+for the same reason `/api/history` is — its size is now user-controlled.
+
 **HTTPS probe note**: the HTTP/HTTPS probe uses `setInsecure()` — it does
 not validate the server's certificate chain. Its job is reachability and
 latency, not asserting trust in the endpoint; don't point it at something
@@ -128,13 +141,15 @@ has no NTP/RTC dependency) — use it as a relative axis, or combine with
 
 ## GET /api/config — auth required
 
-Returns the full config with `wifiPassword`/`authPassword` omitted.
+Returns the full config with `wifiPassword`/`authPassword`/`wifiEapPassword`
+omitted.
 
 ## POST /api/config — auth required
 
 Partial update — send only the fields you want to change. On success,
 sensor-related changes (`sensorType`/`sensorGpio`) re-initialize the sensor
-without a reboot; a `wifiSsid` change triggers a reconnect attempt (falling
+without a reboot; a change to `wifiSsid`, `wifiPassword`, `wifiAuthMode`,
+`wifiUsername`, or `wifiEapPassword` triggers a reconnect attempt (falling
 back to the provisioning AP if it fails). See
 [configuration.md](configuration.md) for the full field list and
 validation rules.
@@ -143,6 +158,14 @@ validation rules.
 curl -u admin:PASSWORD -X POST http://envprobe.local/api/config \
   -H "Content-Type: application/json" \
   -d '{"environmentInterval": 15, "tempHighC": 32}'
+```
+
+WPA2-Enterprise (PEAP/MSCHAPv2) example:
+
+```bash
+curl -u admin:PASSWORD -X POST http://envprobe.local/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"wifiSsid": "CorpNet", "wifiAuthMode": "enterprise", "wifiUsername": "jdoe", "wifiEapPassword": "secret"}'
 ```
 
 ```json

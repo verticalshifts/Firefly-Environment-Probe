@@ -12,14 +12,16 @@ async function loadNetwork() {
 
   const rows = net.probes.map((p) => `
     <tr>
-      <td>${p.label}</td>
-      <td>${p.target || "—"}${p.extra ? `<div class="hint">${p.extra}</div>` : ""}</td>
+      <td>${Probe.esc(p.label)}${p.gen2 ? ` <span class="hint">from GEN2</span>` : ""}
+          <div class="hint">${Probe.esc(p.type || "")}</div></td>
+      <td>${Probe.esc(p.target) || "—"}${p.extra ? `<div class="hint">${Probe.esc(p.extra)}</div>` : ""}</td>
       <td></td>
       <td class="num">${p.reachable ? Probe.fmt(p.latencyMs, 1) + " ms" : "—"}</td>
       <td class="num">${Probe.fmt(p.packetLossPercent, 0)}%</td>
       <td class="hint">${p.lastProbeSecondsAgo !== undefined ? Probe.age(p.lastProbeSecondsAgo) : "—"}</td>
     </tr>`).join("");
-  document.getElementById("probeRows").innerHTML = rows;
+  document.getElementById("probeRows").innerHTML =
+    net.probes.length ? rows : `<tr><td colspan="6" class="hint">No monitors configured — add some in Settings.</td></tr>`;
   document.querySelectorAll("#probeRows tr").forEach((tr, i) => {
     tr.children[2].appendChild(Probe.badge(net.probes[i].status));
   });

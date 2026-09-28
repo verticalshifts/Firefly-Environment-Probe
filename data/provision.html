@@ -24,7 +24,19 @@
     <form class="settings-form" id="provisionForm">
       <div class="field"><label for="deviceName">Device Name</label><input id="deviceName" name="deviceName" placeholder="Server Room Probe"></div>
       <div class="field"><label for="wifiSsid">Wi-Fi SSID</label><input id="wifiSsid" name="wifiSsid" required></div>
-      <div class="field"><label for="wifiPassword">Wi-Fi Password</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field">
+        <label for="wifiAuthMode">Wi-Fi Security</label>
+        <select id="wifiAuthMode" name="wifiAuthMode">
+          <option value="personal">WPA2-Personal</option>
+          <option value="enterprise">WPA2-Enterprise</option>
+        </select>
+      </div>
+      <p class="hint">Personal uses a shared password. Enterprise uses a per-person username + password (common on corporate/campus Wi-Fi).</p>
+      <div class="field" id="wifiPersonalFields"><label for="wifiPassword">Wi-Fi Password</label><input id="wifiPassword" name="wifiPassword" type="password"></div>
+      <div class="field-row" id="wifiEnterpriseFields" style="display:none;">
+        <div class="field"><label for="wifiUsername">Username</label><input id="wifiUsername" name="wifiUsername"></div>
+        <div class="field"><label for="wifiEapPassword">Password</label><input id="wifiEapPassword" name="wifiEapPassword" type="password"></div>
+      </div>
 
       <div class="field-row">
         <div class="field">

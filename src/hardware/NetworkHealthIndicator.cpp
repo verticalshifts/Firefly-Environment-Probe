@@ -8,22 +8,51 @@ static const IPAddress PING_TARGET(8, 8, 8, 8);
 NetworkHealthIndicator::NetworkHealthIndicator(uint8_t gpio, NetworkManager &network)
     : gpio_(gpio), network_(network) {}
 
-void NetworkHealthIndicator::attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode) {
+void NetworkHealthIndicator::attachRgb(uint8_t rPin, uint8_t gPin, uint8_t bPin, bool commonAnode,
+                                      uint8_t brightnessPct) {
     rgbR_ = rPin;
     rgbG_ = gPin;
     rgbB_ = bPin;
     rgbCommonAnode_ = commonAnode;
+    rgbBrightnessPct_ = brightnessPct > 100 ? 100 : brightnessPct;
 }
 
 void NetworkHealthIndicator::begin() {
     pinMode(gpio_, OUTPUT);
     if (rgbR_ != NO_PIN) {
+#if defined(PLATFORM_ESP32)
+        ledcSetup(RGB_CH_R, RGB_PWM_FREQ, RGB_PWM_BITS);
+        ledcSetup(RGB_CH_G, RGB_PWM_FREQ, RGB_PWM_BITS);
+        ledcSetup(RGB_CH_B, RGB_PWM_FREQ, RGB_PWM_BITS);
+        ledcAttachPin(rgbR_, RGB_CH_R);
+        ledcAttachPin(rgbG_, RGB_CH_G);
+        ledcAttachPin(rgbB_, RGB_CH_B);
+#else
         pinMode(rgbR_, OUTPUT);
         pinMode(rgbG_, OUTPUT);
         pinMode(rgbB_, OUTPUT);
+#endif
+        rgbSelfTest(); // POST-style lamp check: R, G, B in turn, twice
     }
     setLed(true);   // steady-on is the default/fallback state — see header comment
     applyRgb();     // green (STEADY_ON) is the matching default colour
+}
+
+// Boot-time RGB lamp check: light red, then green, then blue on their own,
+// for RGB_SELFTEST_CYCLES passes, so a dead channel or a mis-wired colour
+// leg is obvious before the LED settles into its network-health colour.
+// Blocking (called only from begin(), during setup()) and short by design.
+void NetworkHealthIndicator::rgbSelfTest() {
+    if (rgbR_ == NO_PIN) return;
+    for (uint8_t cycle = 0; cycle < RGB_SELFTEST_CYCLES; cycle++) {
+        const bool steps[3][3] = {{true, false, false}, {false, true, false}, {false, false, true}};
+        for (auto &s : steps) {
+            writeRgb(s[0], s[1], s[2]);
+            delay(RGB_SELFTEST_ON_MS);
+            writeRgb(false, false, false);
+            delay(RGB_SELFTEST_GAP_MS);
+        }
+    }
 }
 
 PingHealthZone NetworkHealthIndicator::classify(bool ok, float latencyMs) {
@@ -126,8 +155,22 @@ void NetworkHealthIndicator::applyRgb() {
 }
 
 void NetworkHealthIndicator::writeRgb(bool r, bool g, bool b) {
-    // Common-cathode: HIGH lights a channel. Common-anode: inverted.
+#if defined(PLATFORM_ESP32)
+    // 8-bit LEDC duty for a lit channel at the configured brightness; an
+    // unlit channel is 0. Common-anode inverts (255 - duty) since the
+    // channel is then pulled LOW to light it.
+    const uint32_t lit = (rgbBrightnessPct_ * 255u + 50u) / 100u;
+    auto duty = [this, lit](bool on) -> uint32_t {
+        uint32_t d = on ? lit : 0u;
+        return rgbCommonAnode_ ? (255u - d) : d;
+    };
+    ledcWrite(RGB_CH_R, duty(r));
+    ledcWrite(RGB_CH_G, duty(g));
+    ledcWrite(RGB_CH_B, duty(b));
+#else
+    // ESP8266: on/off only — no analogWrite here (see header note).
     digitalWrite(rgbR_, (r != rgbCommonAnode_) ? HIGH : LOW);
     digitalWrite(rgbG_, (g != rgbCommonAnode_) ? HIGH : LOW);
     digitalWrite(rgbB_, (b != rgbCommonAnode_) ? HIGH : LOW);
+#endif
 }

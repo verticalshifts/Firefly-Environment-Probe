@@ -32,6 +32,20 @@ const Probe = {
     return Number(value).toFixed(digits === undefined ? 1 : digits);
   },
 
+  // Escapes text before it goes into innerHTML. Monitor names, targets and
+  // probe `extra` strings are user-supplied — and can also arrive from a GEN2
+  // dispatch — so interpolating them raw would be a stored-XSS hole. This was
+  // harmless while the five probe labels were fixed strings in firmware.
+  esc(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  },
+
   // Resolves a CSS custom property to its computed value (e.g. "#33c17a"),
   // so JS-drawn canvas/SVG stays in sync with the design tokens in style.css
   // instead of duplicating hex codes.

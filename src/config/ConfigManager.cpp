@@ -4,6 +4,17 @@
 
 static const char *TAG = "Config";
 
+// Short opaque id for a monitor. Only has to be unique within one device's
+// list and stable once persisted — it is what live probe results are matched
+// against, so it must survive a reboot and must not be a list index.
+static String makeMonitorId() {
+    static uint32_t seq = 0;
+    uint32_t v = (uint32_t)micros() ^ (++seq * 2654435761u);
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%08x", (unsigned)v);
+    return String(buf);
+}
+
 ConfigManager::ConfigManager(StorageManager &storage) : storage_(storage) {}
 
 bool ConfigManager::begin() {
@@ -21,6 +32,12 @@ bool ConfigManager::begin() {
     } else {
         Logger::info(TAG, "No valid config.json found, using defaults");
         config_ = DeviceConfig();
+        // A factory-fresh device still needs a starting monitor set —
+        // DeviceConfig has an empty list, and without this the device would
+        // monitor nothing at all, where the pre-v3 firmware always had five.
+        // Seeding from an empty document yields exactly those five defaults.
+        JsonDocument empty;
+        seedMonitorsFromLegacy(empty, config_);
     }
 
     if (config_.sensorGpio == 0) {
@@ -43,6 +60,9 @@ void ConfigManager::fromJson(JsonDocument &doc) {
 
     c.wifiSsid = doc["wifiSsid"] | c.wifiSsid;
     c.wifiPassword = doc["wifiPassword"] | c.wifiPassword;
+    c.wifiAuthMode = doc["wifiAuthMode"] | c.wifiAuthMode;
+    c.wifiUsername = doc["wifiUsername"] | c.wifiUsername;
+    c.wifiEapPassword = doc["wifiEapPassword"] | c.wifiEapPassword;
     c.useStaticIp = doc["useStaticIp"] | c.useStaticIp;
     c.staticIp = doc["staticIp"] | c.staticIp;
     c.staticGateway = doc["staticGateway"] | c.staticGateway;
@@ -62,13 +82,36 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.networkIntervalS = doc["networkInterval"] | c.networkIntervalS;
     c.dashboardRefreshS = doc["dashboardRefresh"] | c.dashboardRefreshS;
 
-    c.gatewayTarget = doc["gatewayTarget"] | c.gatewayTarget;
-    c.pingTarget1 = doc["pingTarget1"] | c.pingTarget1;
-    c.pingTarget2 = doc["pingTarget2"] | c.pingTarget2;
-    c.dnsDomain = doc["dnsDomain"] | c.dnsDomain;
-    c.httpTarget = doc["httpTarget"] | c.httpTarget;
     c.probeTimeoutMs = doc["probeTimeoutMs"] | c.probeTimeoutMs;
     c.probePacketCount = doc["probePacketCount"] | c.probePacketCount;
+
+    // Monitors exist from schema v3 onward. A malformed entry is skipped
+    // rather than failing the whole load — one corrupt monitor must not cost
+    // the user their Wi-Fi credentials. Absent entirely => this is a pre-v3
+    // config, so seed the list from the old fixed probe-target keys.
+    c.monitorCount = 0;
+    if (doc["monitors"].is<JsonArray>()) {
+        for (JsonObjectConst m : doc["monitors"].as<JsonArrayConst>()) {
+            if (c.monitorCount >= hw::MAX_MONITORS) break;
+            String name = m["name"].is<const char *>() ? m["name"].as<String>() : String("");
+            if (name.length() == 0) continue;
+            MonitorType type;
+            String typeName = m["type"].is<const char *>() ? m["type"].as<String>() : String("ping");
+            if (!monitorTypeFromName(typeName, type)) continue;
+
+            MonitorDef &d = c.monitors[c.monitorCount++];
+            d.id = m["id"].is<const char *>() ? m["id"].as<String>() : String("");
+            if (d.id.length() == 0) d.id = makeMonitorId();
+            d.name = name;
+            d.type = type;
+            d.target = m["target"].is<const char *>() ? m["target"].as<String>() : String("");
+            d.port = m["port"].is<int>() ? (uint16_t)m["port"].as<int>() : 0;
+            d.latencyHighMs = m["latencyHighMs"].is<int>() ? (uint16_t)m["latencyHighMs"].as<int>() : 0;
+            d.gen2Owned = m["gen2"].is<bool>() ? m["gen2"].as<bool>() : false;
+        }
+    } else {
+        seedMonitorsFromLegacy(doc, c);
+    }
 
     c.tempHighC = doc["tempHighC"] | c.tempHighC;
     c.tempLowC = doc["tempLowC"] | c.tempLowC;
@@ -84,11 +127,59 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.gen2LicenseKey = doc["gen2LicenseKey"] | c.gen2LicenseKey;
     c.gen2MonitorName = doc["gen2MonitorName"] | c.gen2MonitorName;
     c.gen2IntervalS = doc["gen2IntervalS"] | c.gen2IntervalS;
+    c.gen2SyncEnabled = doc["gen2SyncEnabled"] | c.gen2SyncEnabled;
+    c.gen2SyncIntervalS = doc["gen2SyncIntervalS"] | c.gen2SyncIntervalS;
+    c.gen2PublishMonitors = doc["gen2PublishMonitors"] | c.gen2PublishMonitors;
+
+    c.iotgwEnabled = doc["iotgwEnabled"] | c.iotgwEnabled;
+    c.iotgwUrl = doc["iotgwUrl"] | c.iotgwUrl;
+    c.iotgwToken = doc["iotgwToken"] | c.iotgwToken;
+    c.iotgwIntervalS = doc["iotgwIntervalS"] | c.iotgwIntervalS;
 
     c.otaCheckEnabled = doc["otaCheckEnabled"] | c.otaCheckEnabled;
     c.otaCheckIntervalS = doc["otaCheckIntervalS"] | c.otaCheckIntervalS;
 
     config_ = c;
+}
+
+// One-time migration off the pre-v3 fixed five. Reads the legacy keys
+// straight off the raw document because they no longer exist as DeviceConfig
+// fields; once this has run, save() rewrites config.json without them.
+void ConfigManager::seedMonitorsFromLegacy(JsonDocument &doc, DeviceConfig &c) {
+    struct Seed {
+        const char *key;
+        const char *name;
+        MonitorType type;
+        const char *fallback;
+    };
+    // Same order, names and defaults the fixed probes had, so an upgraded
+    // device looks unchanged to its user.
+    static const Seed seeds[] = {
+        {"gatewayTarget", "Gateway",        MonitorType::PING, ""},
+        {"pingTarget1",   "Probe Target 1", MonitorType::PING, "8.8.8.8"},
+        {"pingTarget2",   "Probe Target 2", MonitorType::PING, "1.1.1.1"},
+        {"dnsDomain",     "DNS",            MonitorType::DNS,  "google.com"},
+        {"httpTarget",    "HTTP/HTTPS",     MonitorType::HTTP, "https://example.com"},
+    };
+
+    bool fromLegacy = false;
+    c.monitorCount = 0;
+    for (const Seed &s : seeds) {
+        if (c.monitorCount >= hw::MAX_MONITORS) break;
+        bool present = doc[s.key].is<const char *>();
+        if (present) fromLegacy = true;
+
+        MonitorDef &d = c.monitors[c.monitorCount++];
+        d.id = makeMonitorId();
+        d.name = s.name;
+        d.type = s.type;
+        // A blank gateway target still means "use the DHCP-learned gateway".
+        d.target = present ? doc[s.key].as<String>() : String(s.fallback);
+        d.port = 0;
+        d.gen2Owned = false;
+    }
+    Logger::info(TAG, "Seeded " + String(c.monitorCount) +
+                          (fromLegacy ? " monitors from legacy probe targets" : " default monitors"));
 }
 
 void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
@@ -98,6 +189,9 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
 
     doc["wifiSsid"] = c.wifiSsid;
     if (!redactSecrets) doc["wifiPassword"] = c.wifiPassword;
+    doc["wifiAuthMode"] = c.wifiAuthMode;
+    doc["wifiUsername"] = c.wifiUsername;
+    if (!redactSecrets) doc["wifiEapPassword"] = c.wifiEapPassword;
     doc["useStaticIp"] = c.useStaticIp;
     doc["staticIp"] = c.staticIp;
     doc["staticGateway"] = c.staticGateway;
@@ -117,13 +211,24 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     doc["networkInterval"] = c.networkIntervalS;
     doc["dashboardRefresh"] = c.dashboardRefreshS;
 
-    doc["gatewayTarget"] = c.gatewayTarget;
-    doc["pingTarget1"] = c.pingTarget1;
-    doc["pingTarget2"] = c.pingTarget2;
-    doc["dnsDomain"] = c.dnsDomain;
-    doc["httpTarget"] = c.httpTarget;
     doc["probeTimeoutMs"] = c.probeTimeoutMs;
     doc["probePacketCount"] = c.probePacketCount;
+
+    // Always emitted, including when empty: config.json is rewritten on every
+    // boot, so an array that failed to round-trip would silently erase the
+    // user's monitors.
+    JsonArray mons = doc["monitors"].to<JsonArray>();
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        const MonitorDef &m = c.monitors[i];
+        JsonObject o = mons.add<JsonObject>();
+        o["id"] = m.id;
+        o["name"] = m.name;
+        o["type"] = monitorTypeName(m.type);
+        o["target"] = m.target;
+        o["port"] = m.port;
+        o["latencyHighMs"] = m.latencyHighMs; // 0 = inherit
+        o["gen2"] = m.gen2Owned;
+    }
 
     doc["tempHighC"] = c.tempHighC;
     doc["tempLowC"] = c.tempLowC;
@@ -139,6 +244,14 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     if (!redactSecrets) doc["gen2LicenseKey"] = c.gen2LicenseKey;
     doc["gen2MonitorName"] = c.gen2MonitorName;
     doc["gen2IntervalS"] = c.gen2IntervalS;
+    doc["gen2SyncEnabled"] = c.gen2SyncEnabled;
+    doc["gen2SyncIntervalS"] = c.gen2SyncIntervalS;
+    doc["gen2PublishMonitors"] = c.gen2PublishMonitors;
+
+    doc["iotgwEnabled"] = c.iotgwEnabled;
+    doc["iotgwUrl"] = c.iotgwUrl;
+    if (!redactSecrets) doc["iotgwToken"] = c.iotgwToken;
+    doc["iotgwIntervalS"] = c.iotgwIntervalS;
 
     doc["otaCheckEnabled"] = c.otaCheckEnabled;
     doc["otaCheckIntervalS"] = c.otaCheckIntervalS;
@@ -155,6 +268,14 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
     }
     if (c.wifiConnectAttempts < 1 || c.wifiConnectAttempts > 10) {
         errorOut = "wifiConnectAttempts out of range (1-10)";
+        return false;
+    }
+    if (c.wifiAuthMode != "personal" && c.wifiAuthMode != "enterprise") {
+        errorOut = "wifiAuthMode must be personal or enterprise";
+        return false;
+    }
+    if (c.wifiAuthMode == "enterprise" && c.wifiSsid.length() > 0 && c.wifiUsername.length() == 0) {
+        errorOut = "wifiUsername is required when wifiAuthMode is enterprise";
         return false;
     }
     if (c.sensorType != "DHT11" && c.sensorType != "DHT22") {
@@ -189,6 +310,61 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
         errorOut = "gen2ServerUrl cannot be empty";
         return false;
     }
+    if (c.gen2SyncIntervalS < 30 || c.gen2SyncIntervalS > 3600) {
+        errorOut = "gen2SyncIntervalS out of range (30-3600s)";
+        return false;
+    }
+    if (c.monitorCount > hw::MAX_MONITORS) {
+        errorOut = "too many monitors (max " + String(hw::MAX_MONITORS) + " on this board)";
+        return false;
+    }
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        const MonitorDef &m = c.monitors[i];
+        if (m.name.length() == 0) {
+            errorOut = "monitor name cannot be empty";
+            return false;
+        }
+        // Names are the identity GEN2 dispatch matches on, so duplicates would
+        // make a remove ambiguous.
+        for (uint8_t j = i + 1; j < c.monitorCount; j++) {
+            if (c.monitors[j].name == m.name) {
+                errorOut = "duplicate monitor name: " + m.name;
+                return false;
+            }
+        }
+        // A blank PING target is meaningful — it means "the DHCP gateway",
+        // which is how the old fixed Gateway probe behaved. Every other type
+        // needs something concrete to act on.
+        if (m.type != MonitorType::PING && m.target.length() == 0) {
+            errorOut = "monitor \"" + m.name + "\" needs a target";
+            return false;
+        }
+        if (m.type == MonitorType::PORT && m.port == 0) {
+            errorOut = "monitor \"" + m.name + "\" needs a port (1-65535)";
+            return false;
+        }
+        // 0 is the "inherit" sentinel; anything else is an explicit bar.
+        if (m.latencyHighMs != 0 && m.latencyHighMs < 10) {
+            errorOut = "monitor \"" + m.name + "\" latency threshold must be 0 (inherit) or at least 10ms";
+            return false;
+        }
+    }
+    if (c.iotgwIntervalS < 10 || c.iotgwIntervalS > 3600) {
+        errorOut = "iotgwIntervalS out of range (10-3600s)";
+        return false;
+    }
+    // URL/token are only required once the gateway is actually turned on, so
+    // a device can keep a half-filled gateway section while it's disabled.
+    if (c.iotgwEnabled) {
+        if (!c.iotgwUrl.startsWith("http://") && !c.iotgwUrl.startsWith("https://")) {
+            errorOut = "iotgwUrl must start with http:// or https:// when the IoT Gateway is enabled";
+            return false;
+        }
+        if (c.iotgwToken.length() == 0) {
+            errorOut = "iotgwToken is required when the IoT Gateway is enabled";
+            return false;
+        }
+    }
     if (c.otaCheckIntervalS < 300 || c.otaCheckIntervalS > 604800) {
         errorOut = "otaCheckIntervalS out of range (300-604800s)";
         return false;
@@ -198,10 +374,16 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
 
 bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     DeviceConfig c = config_;
+    bool monitorsChanged = false;
 
     if (updates["deviceName"].is<const char *>()) c.deviceName = updates["deviceName"].as<String>();
     if (updates["wifiSsid"].is<const char *>()) c.wifiSsid = updates["wifiSsid"].as<String>();
     if (updates["wifiPassword"].is<const char *>()) c.wifiPassword = updates["wifiPassword"].as<String>();
+    if (updates["wifiAuthMode"].is<const char *>()) c.wifiAuthMode = updates["wifiAuthMode"].as<String>();
+    if (updates["wifiUsername"].is<const char *>()) c.wifiUsername = updates["wifiUsername"].as<String>();
+    if (updates["wifiEapPassword"].is<const char *>() && updates["wifiEapPassword"].as<String>().length() > 0) {
+        c.wifiEapPassword = updates["wifiEapPassword"].as<String>();
+    }
     if (updates["useStaticIp"].is<bool>()) c.useStaticIp = updates["useStaticIp"];
     if (updates["staticIp"].is<const char *>()) c.staticIp = updates["staticIp"].as<String>();
     if (updates["staticGateway"].is<const char *>()) c.staticGateway = updates["staticGateway"].as<String>();
@@ -223,13 +405,55 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     if (updates["networkInterval"].is<unsigned int>()) c.networkIntervalS = updates["networkInterval"];
     if (updates["dashboardRefresh"].is<unsigned int>()) c.dashboardRefreshS = updates["dashboardRefresh"];
 
-    if (updates["gatewayTarget"].is<const char *>()) c.gatewayTarget = updates["gatewayTarget"].as<String>();
-    if (updates["pingTarget1"].is<const char *>()) c.pingTarget1 = updates["pingTarget1"].as<String>();
-    if (updates["pingTarget2"].is<const char *>()) c.pingTarget2 = updates["pingTarget2"].as<String>();
-    if (updates["dnsDomain"].is<const char *>()) c.dnsDomain = updates["dnsDomain"].as<String>();
-    if (updates["httpTarget"].is<const char *>()) c.httpTarget = updates["httpTarget"].as<String>();
     if (updates["probeTimeoutMs"].is<unsigned int>()) c.probeTimeoutMs = updates["probeTimeoutMs"];
     if (updates["probePacketCount"].is<int>()) c.probePacketCount = updates["probePacketCount"];
+
+    // Whole-list replace (there is no per-monitor PATCH: the Settings page
+    // submits the complete list it rendered). GEN2-owned monitors are
+    // re-attached from the CURRENT config regardless of what the client sent,
+    // so they cannot be edited or deleted even by a client bypassing the UI —
+    // the read-only rule lives here, not in the browser.
+    if (updates["monitors"].is<JsonArrayConst>()) {
+        // Compacted in place rather than via a second MonitorDef[MAX_MONITORS]
+        // local: this runs inside the web server's call chain, where a few
+        // hundred extra bytes of stack is a real cost on ESP8266. Safe because
+        // the write index never outruns the read index.
+        uint8_t n = 0;
+        for (uint8_t i = 0; i < c.monitorCount; i++) {
+            if (c.monitors[i].gen2Owned) {
+                if (n != i) c.monitors[n] = c.monitors[i];
+                n++;
+            }
+        }
+        for (JsonObjectConst m : updates["monitors"].as<JsonArrayConst>()) {
+            // A client-claimed gen2 flag is ignored outright; the real ones
+            // were already carried over above.
+            if (m["gen2"].is<bool>() && m["gen2"].as<bool>()) continue;
+            if (n >= hw::MAX_MONITORS) {
+                errorOut = "too many monitors (max " + String(hw::MAX_MONITORS) + " on this board)";
+                return false;
+            }
+            String typeName = m["type"].is<const char *>() ? m["type"].as<String>() : String("ping");
+            MonitorType type;
+            if (!monitorTypeFromName(typeName, type)) {
+                errorOut = "unknown monitor type: " + typeName;
+                return false;
+            }
+            MonitorDef d;
+            d.id = m["id"].is<const char *>() ? m["id"].as<String>() : String("");
+            if (d.id.length() == 0) d.id = makeMonitorId();
+            d.name = m["name"].is<const char *>() ? m["name"].as<String>() : String("");
+            d.type = type;
+            d.target = m["target"].is<const char *>() ? m["target"].as<String>() : String("");
+            d.port = m["port"].is<int>() ? (uint16_t)m["port"].as<int>() : 0;
+            d.latencyHighMs = m["latencyHighMs"].is<int>() ? (uint16_t)m["latencyHighMs"].as<int>() : 0;
+            d.gen2Owned = false;
+            c.monitors[n++] = d;
+        }
+        for (uint8_t i = n; i < hw::MAX_MONITORS; i++) c.monitors[i] = MonitorDef();
+        c.monitorCount = n;
+        monitorsChanged = true;
+    }
 
     if (updates["tempHighC"].is<float>()) c.tempHighC = updates["tempHighC"];
     if (updates["tempLowC"].is<float>()) c.tempLowC = updates["tempLowC"];
@@ -249,6 +473,16 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     }
     if (updates["gen2MonitorName"].is<const char *>()) c.gen2MonitorName = updates["gen2MonitorName"].as<String>();
     if (updates["gen2IntervalS"].is<unsigned int>()) c.gen2IntervalS = updates["gen2IntervalS"];
+    if (updates["gen2SyncEnabled"].is<bool>()) c.gen2SyncEnabled = updates["gen2SyncEnabled"];
+    if (updates["gen2SyncIntervalS"].is<unsigned int>()) c.gen2SyncIntervalS = updates["gen2SyncIntervalS"];
+    if (updates["gen2PublishMonitors"].is<bool>()) c.gen2PublishMonitors = updates["gen2PublishMonitors"];
+
+    if (updates["iotgwEnabled"].is<bool>()) c.iotgwEnabled = updates["iotgwEnabled"];
+    if (updates["iotgwUrl"].is<const char *>()) c.iotgwUrl = updates["iotgwUrl"].as<String>();
+    if (updates["iotgwToken"].is<const char *>() && updates["iotgwToken"].as<String>().length() > 0) {
+        c.iotgwToken = updates["iotgwToken"].as<String>();
+    }
+    if (updates["iotgwIntervalS"].is<unsigned int>()) c.iotgwIntervalS = updates["iotgwIntervalS"];
 
     if (updates["otaCheckEnabled"].is<bool>()) c.otaCheckEnabled = updates["otaCheckEnabled"];
     if (updates["otaCheckIntervalS"].is<unsigned int>()) c.otaCheckIntervalS = updates["otaCheckIntervalS"];
@@ -258,5 +492,63 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     }
 
     config_ = c;
+    if (monitorsChanged) monitorsGeneration_++;
+    return save();
+}
+
+bool ConfigManager::addOrUpdateMonitor(const MonitorDef &m, String &errorOut) {
+    DeviceConfig c = config_;
+
+    int existing = -1;
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        if (c.monitors[i].name == m.name) {
+            existing = i;
+            break;
+        }
+    }
+
+    if (existing >= 0) {
+        // Re-dispatching an existing monitor updates it in place rather than
+        // duplicating it, so replayed jobs are idempotent. The original id is
+        // kept so live results stay attached to it.
+        String keepId = c.monitors[existing].id;
+        c.monitors[existing] = m;
+        if (c.monitors[existing].id.length() == 0) c.monitors[existing].id = keepId;
+    } else {
+        if (c.monitorCount >= hw::MAX_MONITORS) {
+            errorOut = "monitor list is full (max " + String(hw::MAX_MONITORS) + " on this board)";
+            return false;
+        }
+        c.monitors[c.monitorCount] = m;
+        if (c.monitors[c.monitorCount].id.length() == 0) {
+            c.monitors[c.monitorCount].id = makeMonitorId();
+        }
+        c.monitorCount++;
+    }
+
+    if (!validate(c, errorOut)) return false;
+    config_ = c;
+    monitorsGeneration_++;
+    return save();
+}
+
+bool ConfigManager::removeMonitorByName(const String &name) {
+    DeviceConfig c = config_;
+    uint8_t n = 0;
+    bool removed = false;
+    for (uint8_t i = 0; i < c.monitorCount; i++) {
+        if (c.monitors[i].name == name) {
+            removed = true;
+            continue;
+        }
+        if (n != i) c.monitors[n] = c.monitors[i];
+        n++;
+    }
+    if (!removed) return false; // nothing to do — treat as already applied
+
+    for (uint8_t i = n; i < c.monitorCount; i++) c.monitors[i] = MonitorDef();
+    c.monitorCount = n;
+    config_ = c;
+    monitorsGeneration_++;
     return save();
 }

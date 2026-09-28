@@ -4,8 +4,23 @@
 
 #if defined(PLATFORM_ESP32)
 #include <ESPmDNS.h>
+// esp_wifi_sta_wpa2_ent_disable(); WPA2_AUTH_PEAP and the WiFi.begin(ssid,
+// method, identity, username, password, ...) overload used below already
+// come from <WiFi.h> (WiFiSTA.h includes esp_wpa2.h internally) — included
+// explicitly here just to document the dependency.
+#include <esp_wpa2.h>
 #elif defined(PLATFORM_ESP8266)
 #include <ESP8266mDNS.h>
+// No Arduino-level WPA2-Enterprise API exists for ESP8266 (unlike ESP32's
+// esp_wpa2.h wrapper above) — these are raw NONOS SDK C functions, not part
+// of any documented/supported Arduino-ESP8266 surface. This is a known
+// community DIY pattern, not an Espressif-supported one: re-verify the
+// call sequence below on real hardware after any ESP8266 platform/core
+// version bump in platformio.ini.
+extern "C" {
+#include <user_interface.h>
+#include <wpa2_enterprise.h>
+}
 #endif
 
 static const char *TAG = "Network";
@@ -126,7 +141,9 @@ void NetworkManager::connectSTA(bool blockingFirstAttempt) {
         }
     } else {
         // Non-blocking path: single begin(), no wait, no scan — matches the
-        // pre-existing behavior for this (currently unused) branch.
+        // pre-existing behavior for this (currently unused) branch. Personal-
+        // auth only; not wired for wifiAuthMode=="enterprise" since nothing
+        // calls this branch today.
         WiFi.begin(c.wifiSsid.c_str(), c.wifiPassword.c_str());
         Logger::info(TAG, "Connecting to " + c.wifiSsid);
     }
@@ -196,12 +213,73 @@ bool NetworkManager::performConnectAttempt(const DeviceConfig &c, uint32_t maxWa
     if (targetIsWep) Logger::info(TAG, "Target network is WEP-secured — using legacy WEP auth");
 #endif
 
-    if (haveBestBssid) {
-        WiFi.begin(c.wifiSsid.c_str(), c.wifiPassword.c_str(), bestChannel, bestBssid, true);
-        Logger::info(TAG, "Connecting to " + c.wifiSsid + " (targeting strongest AP, ch=" + String(bestChannel) + ")");
+    if (c.wifiAuthMode == "enterprise") {
+        Logger::info(TAG, "Connecting to " + c.wifiSsid + " (WPA2-Enterprise)" +
+                               (haveBestBssid ? " (targeting strongest AP, ch=" + String(bestChannel) + ")" : ""));
+#if defined(PLATFORM_ESP32)
+        // Built-in Arduino-ESP32 overload (WiFiSTA.h) — internally calls
+        // esp_wifi_sta_wpa2_ent_set_identity/username/password + _enable()
+        // then a plain WiFi.begin(ssid). wpa2_identity and wpa2_username
+        // both get wifiUsername (one field, both roles — product decision).
+        // Only PEAP is supported (not TLS/TTLS), and ca_pem/client_crt/
+        // client_key are NULL — no RADIUS server certificate validation;
+        // see docs/architecture.md's Auth model for that trade-off.
+        WiFi.begin(c.wifiSsid.c_str(), WPA2_AUTH_PEAP,
+                   c.wifiUsername.c_str(), c.wifiUsername.c_str(), c.wifiEapPassword.c_str(),
+                   NULL, NULL, NULL,
+                   haveBestBssid ? bestChannel : 0, haveBestBssid ? bestBssid : nullptr, true);
+#elif defined(PLATFORM_ESP8266)
+        // No Arduino-level Enterprise API on ESP8266 — drive the raw NONOS
+        // SDK station config + WPA2-Enterprise C API directly, bypassing
+        // WiFi.begin()/ESP8266WiFiSTAClass entirely for this connect.
+        // Unofficial community pattern (see the include-block comment
+        // above); the exact call ordering below is the most common DIY
+        // sequence found, NOT confirmed against real hardware in this
+        // session (no ESP8266 board attached) — re-verify on real hardware
+        // before relying on it.
+        wifi_station_disconnect();
+
+        struct station_config conf;
+        memset(&conf, 0, sizeof(conf)); // password[] stays zeroed — unused for enterprise auth
+        strncpy((char *)conf.ssid, c.wifiSsid.c_str(), sizeof(conf.ssid));
+        if (haveBestBssid) {
+            conf.bssid_set = 1;
+            memcpy(conf.bssid, bestBssid, 6);
+        }
+        wifi_station_set_config_current(&conf); // RAM-only — ConfigManager/LittleFS already
+                                                 // owns durable persistence of this data
+
+        wifi_station_set_wpa2_enterprise_auth(1);
+        wifi_station_set_enterprise_identity((u8 *)c.wifiUsername.c_str(), c.wifiUsername.length());
+        wifi_station_set_enterprise_username((u8 *)c.wifiUsername.c_str(), c.wifiUsername.length());
+        wifi_station_set_enterprise_password((u8 *)c.wifiEapPassword.c_str(), c.wifiEapPassword.length());
+
+        wifi_station_connect();
+#endif
     } else {
-        WiFi.begin(c.wifiSsid.c_str(), c.wifiPassword.c_str());
-        Logger::info(TAG, "Connecting to " + c.wifiSsid);
+#if defined(PLATFORM_ESP32)
+        // Disable any previously-enabled Enterprise state before a personal
+        // connect — the stock core's personal-mode begin() never does this
+        // itself (confirmed by reading WiFiSTA.cpp), so a device that was
+        // ever switched to Enterprise and back to Personal could otherwise
+        // get stuck. Cheap/harmless to call unconditionally every attempt.
+        esp_wifi_sta_wpa2_ent_disable();
+#elif defined(PLATFORM_ESP8266)
+        // Same rationale as the ESP32 branch above: clear any Enterprise
+        // state left over from a prior "enterprise" attempt before falling
+        // back to a plain WiFi.begin() with a PSK.
+        wifi_station_set_wpa2_enterprise_auth(0);
+        wifi_station_clear_enterprise_identity();
+        wifi_station_clear_enterprise_username();
+        wifi_station_clear_enterprise_password();
+#endif
+        if (haveBestBssid) {
+            WiFi.begin(c.wifiSsid.c_str(), c.wifiPassword.c_str(), bestChannel, bestBssid, true);
+            Logger::info(TAG, "Connecting to " + c.wifiSsid + " (targeting strongest AP, ch=" + String(bestChannel) + ")");
+        } else {
+            WiFi.begin(c.wifiSsid.c_str(), c.wifiPassword.c_str());
+            Logger::info(TAG, "Connecting to " + c.wifiSsid);
+        }
     }
 
     unsigned long start = millis();
@@ -249,6 +327,16 @@ void NetworkManager::loop() {
     if (WiFi.status() != WL_CONNECTED) {
         unsigned long now = millis();
         // Backoff: retry every 5s rather than hammering WiFi.reconnect().
+        // WiFi.reconnect() just disconnects+reconnects against whatever
+        // station config/Enterprise state is already latched in the SDK —
+        // it doesn't re-run performConnectAttempt()'s branch above. This is
+        // confirmed correct for ESP32 (WiFiSTA.cpp) and for ESP8266's own
+        // reconnect() (ESP8266WiFiSTA.cpp: wifi_station_disconnect() +
+        // wifi_station_connect(), same calls the enterprise branch above
+        // uses directly) — but that the raw enterprise state actually
+        // *stays* latched across a disconnect/connect cycle on ESP8266 is
+        // an assumption from the community pattern, not something the SDK
+        // headers document; unverified on real ESP8266 hardware this session.
         if (now - lastConnectAttemptMs_ >= 5000) {
             lastConnectAttemptMs_ = now;
             Logger::warn(TAG, "Wi-Fi disconnected, attempting reconnect");

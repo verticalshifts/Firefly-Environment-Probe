@@ -3,9 +3,147 @@ const numericFields = new Set([
   "sensorGpio", "environmentInterval", "networkInterval", "dashboardRefresh",
   "probeTimeoutMs", "probePacketCount", "rssiLowDbm",
   "tempHighC", "tempLowC", "humidityHighPct", "humidityLowPct",
-  "latencyHighMs", "packetLossHighPct", "gen2IntervalS", "otaCheckIntervalS",
+  "latencyHighMs", "packetLossHighPct", "gen2IntervalS", "gen2SyncIntervalS",
+  "iotgwIntervalS", "otaCheckIntervalS",
   "wifiConnectAttempts",
 ]);
+
+// ---------------------------------------------------------------------------
+// Monitor list. The rest of this page is a flat name->input bridge, which
+// can't express a variable-length list, so monitors get their own render and
+// collect path. Row inputs deliberately carry NO `name` attribute, so the
+// generic submit loop below skips them.
+// ---------------------------------------------------------------------------
+
+// latencyDefault mirrors monitorTypeDefaultLatencyMs() in MonitorDef.h — 0
+// means the type has no opinion and the global Alert Threshold applies.
+// Connection-oriented checks pay for setup that ICMP doesn't, so they can't
+// meet the same bar however healthy they are.
+const MONITOR_TYPES = [
+  { value: "ping", label: "Ping", hint: "IP or hostname — blank means the DHCP gateway", latencyDefault: 0 },
+  { value: "dns", label: "DNS", hint: "domain to resolve, e.g. google.com", latencyDefault: 0 },
+  { value: "http", label: "HTTP", hint: "full URL, e.g. https://example.com", latencyDefault: 2000 },
+  { value: "port", label: "Port", hint: "host to open a TCP connection to", latencyDefault: 1000 },
+];
+
+// The global Alert Thresholds value, used to show what a blank per-monitor
+// threshold will actually inherit.
+let globalLatencyHigh = 100;
+
+function monitorRow(m) {
+  const gen2 = !!m.gen2;
+  const dis = gen2 ? " disabled" : "";
+  const opts = MONITOR_TYPES.map(
+    (t) => `<option value="${t.value}"${m.type === t.value ? " selected" : ""}>${t.label}</option>`
+  ).join("");
+
+  const row = document.createElement("div");
+  row.className = "monitor-row";
+  row.dataset.id = m.id || "";
+  row.dataset.gen2 = gen2 ? "1" : "";
+  row.innerHTML = `
+    <div class="field-row">
+      <div class="field">
+        <label>Name${gen2 ? ' <span class="hint">from GEN2</span>' : ""}</label>
+        <input class="m-name" value="${Probe.esc(m.name || "")}"${dis}>
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select class="m-type"${dis}>${opts}</select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Target</label>
+        <input class="m-target" value="${Probe.esc(m.target || "")}"${dis}>
+        <span class="hint m-hint">&nbsp;</span>
+      </div>
+      <div class="field m-port-field">
+        <label>Port</label>
+        <input class="m-port" type="number" min="1" max="65535" value="${m.port || ""}"${dis}>
+      </div>
+    </div>
+    <div class="field">
+      <label>Slow above (ms)</label>
+      <input class="m-latency" type="number" min="10" max="60000" value="${m.latencyHighMs || ""}"${dis}>
+      <span class="hint m-latency-hint">&nbsp;</span>
+    </div>
+    <p><button type="button" class="m-remove"${dis}>Remove</button></p>`;
+  return row;
+}
+
+// Port only applies to one type, and the target hint differs per type.
+function applyRowType(row) {
+  const type = row.querySelector(".m-type").value;
+  const meta = MONITOR_TYPES.find((t) => t.value === type) || MONITOR_TYPES[0];
+  row.querySelector(".m-hint").textContent = meta.hint;
+  row.querySelector(".m-port-field").style.display = type === "port" ? "" : "none";
+
+  // Spell out what blank inherits, so a DEGRADED row is explainable without
+  // hunting through two different threshold settings.
+  const inherited = meta.latencyDefault || globalLatencyHigh;
+  const source = meta.latencyDefault ? `the ${meta.label} default` : "Alert Thresholds";
+  row.querySelector(".m-latency-hint").textContent =
+    `blank = ${inherited} ms, from ${source}`;
+}
+
+function updateMonitorCount() {
+  const n = document.querySelectorAll("#monitorRows .monitor-row").length;
+  document.getElementById("monitorCount").textContent =
+    n === 0 ? "No monitors — the device isn't checking anything." : `${n} monitor${n === 1 ? "" : "s"}.`;
+}
+
+function renderMonitors(monitors) {
+  const host = document.getElementById("monitorRows");
+  host.innerHTML = "";
+  (monitors || []).forEach((m) => {
+    const row = monitorRow(m);
+    host.appendChild(row);
+    applyRowType(row);
+  });
+  updateMonitorCount();
+}
+
+// GEN2-owned rows are deliberately NOT sent: the firmware re-attaches them
+// from its own config and ignores any the client claims, so including them
+// would be noise at best and a spoofing attempt at worst.
+function collectMonitors() {
+  return Array.from(document.querySelectorAll("#monitorRows .monitor-row"))
+    .filter((row) => row.dataset.gen2 !== "1")
+    .map((row) => {
+      const type = row.querySelector(".m-type").value;
+      const m = {
+        id: row.dataset.id || "",
+        name: row.querySelector(".m-name").value.trim(),
+        type: type,
+        target: row.querySelector(".m-target").value.trim(),
+      };
+      if (type === "port") m.port = Number(row.querySelector(".m-port").value || 0);
+      // 0 is the firmware's "inherit" sentinel, so a blank box means inherit.
+      m.latencyHighMs = Number(row.querySelector(".m-latency").value || 0);
+      return m;
+    })
+    .filter((m) => m.name.length > 0);
+}
+
+document.getElementById("monitorRows").addEventListener("click", (e) => {
+  const btn = e.target.closest(".m-remove");
+  if (!btn || btn.disabled) return;
+  btn.closest(".monitor-row").remove();
+  updateMonitorCount();
+});
+
+document.getElementById("monitorRows").addEventListener("change", (e) => {
+  if (e.target.classList.contains("m-type")) applyRowType(e.target.closest(".monitor-row"));
+});
+
+document.getElementById("addMonitorBtn").addEventListener("click", () => {
+  const row = monitorRow({ name: "", type: "ping", target: "" });
+  document.getElementById("monitorRows").appendChild(row);
+  applyRowType(row);
+  updateMonitorCount();
+  row.querySelector(".m-name").focus();
+});
 
 // Bounded polling for "did the device actually come back up" after an OTA
 // (manual upload or install-latest) — a bare 200 response only means the
@@ -29,6 +167,13 @@ async function pollForReboot(statusEl) {
   statusEl.textContent = "Update sent but the device hasn't reconnected yet — check it manually.";
 }
 
+function applyWifiAuthModeVisibility() {
+  const enterprise = form.elements["wifiAuthMode"].value === "enterprise";
+  document.getElementById("wifiPersonalFields").style.display = enterprise ? "none" : "";
+  document.getElementById("wifiEnterpriseFields").style.display = enterprise ? "" : "none"; // "" restores .field-row's own `display: grid`
+}
+form.elements["wifiAuthMode"].addEventListener("change", applyWifiAuthModeVisibility);
+
 async function loadConfig() {
   const cfg = await Probe.get("/api/config");
   document.getElementById("fwPlatform").textContent = "";
@@ -36,8 +181,12 @@ async function loadConfig() {
     const el = form.elements[key];
     if (!el) return;
     if (el.type === "checkbox") el.checked = !!cfg[key];
-    else if (key !== "wifiPassword" && key !== "authPassword") el.value = cfg[key];
+    else if (key !== "wifiPassword" && key !== "authPassword" && key !== "wifiEapPassword" && key !== "iotgwToken") el.value = cfg[key];
   });
+  applyWifiAuthModeVisibility();
+  // Read before rendering: the rows show what a blank threshold inherits.
+  if (typeof cfg.latencyHighMs === "number") globalLatencyHigh = cfg.latencyHighMs;
+  renderMonitors(cfg.monitors);
 }
 
 async function loadStatus() {
@@ -55,11 +204,15 @@ form.addEventListener("submit", async (e) => {
     if (el.value === "") return; // don't overwrite with blanks (esp. passwords)
     payload[el.name] = numericFields.has(el.name) ? Number(el.value) : el.value;
   });
+  // Always sent, even when empty — that is how the last monitor gets deleted.
+  payload.monitors = collectMonitors();
 
   try {
     await Probe.post("/api/config", payload);
     Probe.toast("Settings saved");
     form.elements["wifiPassword"].value = "";
+    form.elements["wifiEapPassword"].value = "";
+    form.elements["iotgwToken"].value = "";
     form.elements["authPassword"].value = "";
   } catch (err) {
     Probe.toast("Save failed: " + err.message);

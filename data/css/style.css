@@ -570,7 +570,11 @@ form.settings-form {
   max-width: 560px;
 }
 
-.field { display: grid; gap: 5px; }
+/* grid-template-columns is explicit (not the implicit auto default) so this
+   column can never grow past the container to fit a long child's content —
+   e.g. a <select> option's text — which is exactly what happened with the
+   "WPA2-Enterprise (username + password)" option before this fix. */
+.field { display: grid; gap: 5px; grid-template-columns: minmax(0, 1fr); }
 
 .field label { font-size: var(--fs-label); color: var(--text-dim); font-weight: 500; }
 
@@ -578,6 +582,20 @@ form.settings-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+/* One entry in the Settings monitor list — grouped so it reads as a single
+   editable unit rather than a run of loose fields. */
+.monitor-row {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 12px 12px 0;
+  margin-bottom: 10px;
+}
+.monitor-row input:disabled,
+.monitor-row select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 input, select {
@@ -591,6 +609,13 @@ input, select {
   font-size: var(--fs-body);
   font-family: inherit;
   transition: border-color 150ms ease, box-shadow 150ms ease;
+  /* Without these, a grid/flex item's default auto-minimum size is still
+     its content's min-content width — a <select> with a long option can
+     re-widen its column even inside a constrained (e.g. minmax(0,1fr))
+     track. width:100% + min-width:0 makes every input/select strictly
+     respect its container instead of its own content. */
+  width: 100%;
+  min-width: 0;
 }
 
 input:focus, select:focus {

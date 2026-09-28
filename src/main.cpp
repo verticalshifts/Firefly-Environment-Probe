@@ -10,6 +10,8 @@
 #include "web/WebServerManager.h"
 #include "telemetry/LocalTelemetry.h"
 #include "telemetry/Gen2Telemetry.h"
+#include "telemetry/IotGatewayTelemetry.h"
+#include "telemetry/Gen2MonitorSync.h"
 #include "hardware/NetworkHealthIndicator.h"
 #include "ota/BootGuard.h"
 #include "ota/OTAUpdateChecker.h"
@@ -32,6 +34,8 @@ OTAUpdateChecker otaUpdateChecker(configManager, network); // opt-in, disabled b
 WebServerManager webServer(configManager, environment, network, networkProbe, device, storage, bootGuard, otaUpdateChecker);
 LocalTelemetry telemetry; // Phase 1 stand-in for the future Gen2Telemetry adapter
 Gen2Telemetry gen2Telemetry(configManager, network, device); // opt-in, disabled by default (gen2Enabled)
+IotGatewayTelemetry iotGateway(configManager, network);       // opt-in secondary path via Firefly-CAP100 (iotgwEnabled)
+Gen2MonitorSync gen2Sync(configManager, network);             // opt-in monitor dispatch from GEN2 (gen2SyncEnabled)
 NetworkHealthIndicator networkLed(hw::DEFAULT_NETWORK_LED_GPIO, network);
 
 static const char *TAG = "Main";
@@ -74,13 +78,27 @@ void setup() {
     }
     bootGuard.begin();
     configManager.begin();
+    {
+        // One line naming the GEN2 integration state at boot. Without it,
+        // "why is nothing reaching GEN2?" can't be answered from the serial
+        // log at all — every gate in Gen2Telemetry::publishNetwork and
+        // Gen2MonitorSync::loop() returns silently, so an off switch and a
+        // broken network look identical.
+        const DeviceConfig &gc = configManager.get();
+        Logger::info(TAG, String("GEN2 publish=") + (gc.gen2Enabled ? "on" : "off") +
+                              " sync=" + (gc.gen2SyncEnabled ? "on" : "off") +
+                              " publishMonitors=" + (gc.gen2PublishMonitors ? "on" : "off") +
+                              " monitors=" + String(gc.monitorCount) +
+                              " orgId=" + (gc.gen2OrgId.length() ? "set" : "EMPTY") +
+                              " licenseKey=" + (gc.gen2LicenseKey.length() ? "set" : "EMPTY"));
+    }
     device.begin();
     environment.begin();
     network.begin();
     webServer.begin();
 #ifdef HAS_RGB_HEALTH_LED
     networkLed.attachRgb(hw::RGB_LED_R_GPIO, hw::RGB_LED_G_GPIO, hw::RGB_LED_B_GPIO,
-                         hw::RGB_LED_COMMON_ANODE);
+                         hw::RGB_LED_COMMON_ANODE, hw::RGB_LED_BRIGHTNESS_PCT);
 #endif
     networkLed.begin();
 
@@ -120,11 +138,20 @@ void loop() {
     if (environment.status() != EnvironmentStatus::NOT_YET_READ) {
         telemetry.publishEnvironment(environment.current(), environment.sensorType());
         gen2Telemetry.publishEnvironment(environment.current(), environment.sensorType());
+        // Healthy readings only: the gateway contract has no status field, so
+        // a stale last-known-good value during a sensor fault would read as live.
+        if (environment.status() == EnvironmentStatus::OK) {
+            iotGateway.publishEnvironment(environment.current(), environment.sensorType());
+        }
     }
 
     otaUpdateChecker.loop();
+    gen2Sync.loop(); // applies monitors GEN2 has dispatched; no-op unless enabled
 
     networkProbe.loop();
+    // Publishes one monitor's own status per tick; no-op unless
+    // gen2PublishMonitors is on.
+    gen2Telemetry.publishNetwork(networkProbe.results(), networkProbe.count());
     webServer.loop();
     checkFactoryResetButton();
 
