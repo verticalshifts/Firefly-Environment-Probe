@@ -315,6 +315,7 @@ void NetworkManager::applyNewCredentials() {
 void NetworkManager::loop() {
     if (mode_ == NetworkMode::PROVISIONING_AP) {
         dnsServer_.processNextRequest();
+        retryConfiguredNetworkFromAP();
         return;
     }
 
@@ -324,7 +325,16 @@ void NetworkManager::loop() {
     MDNS.update();
 #endif
 
-    if (WiFi.status() != WL_CONNECTED) {
+    if (WiFi.status() == WL_CONNECTED) {
+        reconnectFailures_ = 0; // the streak only counts consecutive failures
+        if (!everConnected_) {
+            everConnected_ = true;
+            setupMDNS();
+        }
+        return;
+    }
+
+    {
         unsigned long now = millis();
         // Backoff: retry every 5s rather than hammering WiFi.reconnect().
         // WiFi.reconnect() just disconnects+reconnects against whatever
@@ -339,13 +349,65 @@ void NetworkManager::loop() {
         // headers document; unverified on real ESP8266 hardware this session.
         if (now - lastConnectAttemptMs_ >= 5000) {
             lastConnectAttemptMs_ = now;
-            Logger::warn(TAG, "Wi-Fi disconnected, attempting reconnect");
-            WiFi.reconnect();
             reconnectCount_++;
+
+            if (++reconnectFailures_ >= RESCAN_AFTER_FAILURES) {
+                // reconnect() has had its chance. It reuses the BSSID and
+                // channel latched at the last successful connect, so if the
+                // AP returned on a different channel — or another AP in the
+                // same ESS is the reachable one now — it will never succeed,
+                // however long we retry. A full attempt re-scans and re-picks
+                // the strongest matching AP. Bounded (scan + AP_RETRY_WAIT_MS)
+                // so it stays well inside the watchdog window.
+                reconnectFailures_ = 0;
+                Logger::warn(TAG, "Reconnect not succeeding, re-scanning for \"" +
+                                      config_.get().wifiSsid + "\"");
+                performConnectAttempt(config_.get(), AP_RETRY_WAIT_MS);
+            } else {
+                Logger::warn(TAG, "Wi-Fi disconnected, attempting reconnect");
+                WiFi.reconnect();
+            }
         }
-    } else if (!everConnected_) {
+    }
+}
+
+// While parked in the provisioning AP, periodically try the configured
+// network again. Without this the AP was a one-way trip: any outage that
+// outlasted begin()'s ~60s of connect attempts — or a watchdog reset during
+// an outage — left the device serving its setup AP forever, even after the
+// network came back. That is the "device does not come back online" failure.
+void NetworkManager::retryConfiguredNetworkFromAP() {
+    if (!config_.isProvisioned()) return; // no stored network to go back to
+
+    // Don't yank the AP out from under someone who is mid-provisioning.
+    if (WiFi.softAPgetStationNum() > 0) {
+        lastApRetryMs_ = millis(); // and don't pounce the moment they leave
+        return;
+    }
+
+    unsigned long now = millis();
+    if (lastApRetryMs_ != 0 && now - lastApRetryMs_ < AP_RETRY_INTERVAL_MS) return;
+    lastApRetryMs_ = now;
+
+    const DeviceConfig &c = config_.get();
+    Logger::info(TAG, "Retrying \"" + c.wifiSsid + "\" from provisioning AP");
+
+    dnsServer_.stop();
+    WiFi.mode(WIFI_STA);
+
+    // ONE bounded attempt, not connectSTA()'s full ~60s budget: this runs
+    // inside loop() with the watchdog armed, unlike the boot-time connect.
+    if (performConnectAttempt(c, AP_RETRY_WAIT_MS)) {
+        mode_ = NetworkMode::STATION;
         everConnected_ = true;
+        reconnectFailures_ = 0;
+        lastConnectAttemptMs_ = millis();
+        Logger::info(TAG, "Rejoined " + c.wifiSsid + " (" + WiFi.localIP().toString() +
+                              "), leaving provisioning AP");
         setupMDNS();
+    } else {
+        Logger::warn(TAG, "Still cannot reach \"" + c.wifiSsid + "\", staying in provisioning AP");
+        startProvisioningAP(); // re-arms AP mode and the captive-portal DNS
     }
 }
 

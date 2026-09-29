@@ -130,7 +130,19 @@ static constexpr unsigned long BOOT_CONFIRM_WIFI_STABLE_MS = 15000;
 // config change landing mid-iteration is picked up by the remaining steps
 // instead of being missed — but it is a real reordering, so watch for it if
 // something later depends on config being stable across one iteration.
-static inline void serviceWeb() { webServer.loop(); }
+//
+// It also feeds the watchdog. feedWatchdog() otherwise runs only at the top
+// of loop(), so during an internet outage — when the GEN2 POST, the monitor
+// beacons, the sync poll and the HTTPS probe all sit in their timeouts in
+// the SAME iteration — the total could exceed the 15s watchdog and reset the
+// device. That reset was the trigger for the worst failure mode: rebooting
+// while the network is still down drops the device into the provisioning AP.
+// Feeding between known, individually-bounded steps keeps the watchdog's
+// real job (catching a genuine hang inside one step) intact.
+static inline void serviceWeb() {
+    PlatformManager::feedWatchdog();
+    webServer.loop();
+}
 
 void loop() {
     PlatformManager::feedWatchdog();

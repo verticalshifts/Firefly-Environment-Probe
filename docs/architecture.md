@@ -263,6 +263,37 @@ itself. It runs alongside `Gen2Telemetry`, not instead of it; both are
 independently opt-in (`iotgwEnabled`, `gen2Enabled`), and the gateway token
 is redacted from `GET /api/config` like the other secrets.
 
+## Network recovery
+
+Three things keep an outage from becoming a permanent outage. All were added
+after a device failed to come back online following an internet interruption.
+
+**The provisioning AP is not a dead end.** `begin()` falls back to the setup
+AP after ~60s of failed connect attempts, which is right for a genuinely
+misconfigured device — but `loop()` used to `return` immediately in AP mode,
+so nothing ever retried the stored network again. A device that rebooted
+during an outage sat in setup mode forever, even once the network returned.
+`NetworkManager::retryConfiguredNetworkFromAP()` now retries every 60s, using
+one bounded `performConnectAttempt()` rather than the full ~60s budget
+(this runs inside `loop()` with the watchdog armed, unlike the boot path). It
+skips the retry entirely while a client is associated with the AP, so it
+can't yank the portal away from someone mid-provisioning.
+
+**Reconnects re-scan rather than retry blind.** `WiFi.reconnect()` reuses the
+BSSID and channel latched at the last successful connect. Observed live: the
+same ESS moved between channels 3, 4 and 10 across boots, and it has two APs.
+If the pinned one isn't there when the network returns, `reconnect()` can
+never succeed. After `RESCAN_AFTER_FAILURES` consecutive failures (~30s), the
+device does a full scan and re-targets the strongest matching AP instead.
+
+**The watchdog is fed between blocking steps.** `feedWatchdog()` used to run
+only at the top of `loop()`. During an outage the GEN2 POST, monitor beacons,
+sync poll and HTTPS probe all sit in their timeouts in the *same* iteration,
+which could exceed the 15s watchdog and reset the device — dropping it into
+the AP dead-end above. `main.cpp`'s `serviceWeb()` now feeds the watchdog at
+the same points it services the web server. The watchdog still catches a
+genuine hang inside any single step.
+
 ## OTA rollback safety (ESP32 vs. ESP8266)
 
 Both OTA paths (manual upload, `POST /api/ota/install-latest`) arm

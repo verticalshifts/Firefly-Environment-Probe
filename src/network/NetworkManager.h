@@ -58,6 +58,23 @@ private:
     unsigned long lastRssiCheckMs_ = 0;
     bool everConnected_ = false;
 
+    // Consecutive failed WiFi.reconnect() calls. reconnect() reuses the
+    // BSSID/channel latched at the last successful connect, so if the AP
+    // came back on a different channel — or a different AP in the same ESS
+    // is the reachable one now — it can never succeed. After this many
+    // failures, fall back to a full re-scan instead of retrying blind.
+    uint8_t reconnectFailures_ = 0;
+    static constexpr uint8_t RESCAN_AFTER_FAILURES = 6; // ~30s of 5s retries
+
+    // Provisioning-AP escape hatch: while parked in the AP after a failed
+    // connect, periodically try the configured network again, so an outage
+    // that outlasts boot isn't a permanent one-way trip into setup mode.
+    unsigned long lastApRetryMs_ = 0;
+    static constexpr unsigned long AP_RETRY_INTERVAL_MS = 60000;
+    // Kept well under main.cpp's 15s watchdog: scan (~2s) + this wait.
+    static constexpr uint32_t AP_RETRY_WAIT_MS = 5000;
+    void retryConfiguredNetworkFromAP();
+
     void connectSTA(bool blockingFirstAttempt);
     // One full connect attempt: scan (to pick the strongest matching BSSID
     // and detect WEP), WiFi.begin(), then block up to maxWaitMs waiting for
