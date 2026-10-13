@@ -128,6 +128,22 @@ constexpr uint8_t MAX_MONITORS = 6;
 // specific, already-identified physical unit. Reset to "" to go back to
 // auto chip-ID naming (e.g. before flashing a different unit from this
 // same codebase).
-constexpr const char *AP_SSID_OVERRIDE = "Firefly-ENV-W01";
+// Empty = auto chip-ID naming, which is correct for a fleet: a pinned
+// literal means every board flashed from this codebase advertises the SAME
+// setup network, so with two powered on you cannot tell which one you are
+// configuring, and they collide. Set this to a literal again only for a
+// single, already-identified physical unit.
+constexpr const char *AP_SSID_OVERRIDE = "";
+
+// ESP32 Wi-Fi transmit power used when the wifiTxPowerDbm setting is 0.
+// See applyTxPower() in NetworkManager.cpp.
+constexpr uint8_t WIFI_TX_POWER_DEFAULT_DBM = 15;
+
+// Bounds for outbound publishes (GEN2, monitor sync, IoT Gateway) on ESP32,
+// where HTTPClient::setTimeout() covers reads only. Unbounded, a TCP connect
+// or TLS handshake on a degraded link was measured blocking loop() — and so
+// the web UI — for 93s. A healthy GEN2 handshake takes 2-3s on this chip.
+constexpr int32_t HTTP_CONNECT_TIMEOUT_MS = 4000;
+constexpr uint32_t TLS_HANDSHAKE_TIMEOUT_S = 6;
 
 } // namespace hw

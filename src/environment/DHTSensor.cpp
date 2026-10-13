@@ -36,6 +36,20 @@ bool DHTSensor::read(float &temperature, float &humidity) {
         return false;
     }
 
+    // An all-zero frame passes the DHT checksum trivially — it is
+    // data[4] == (data[0]+data[1]+data[2]+data[3]) & 0xFF, i.e. 0 == 0 — so a
+    // data line stuck LOW decodes as a perfectly "valid" 0.0C / 0.0%RH
+    // reading and sails through the plausibility bounds below. Confirmed live:
+    // a miswired DHT22 reported 0C with valid=true in a 32C room, which also
+    // drove the status to CRITICAL and would have published fabricated
+    // readings to GEN2. 0%RH does not occur in any real environment, so the
+    // exact pair is the signature of the wiring fault, not a measurement.
+    if (t == 0.0f && h == 0.0f) {
+        Logger::warn(TAG, "Sensor returned an all-zero frame (0.0C/0.0%RH) — "
+                           "check its power and wiring, or replace the sensor");
+        return false;
+    }
+
     // Plausibility bounds — reject values a DHT11/DHT22 cannot physically
     // produce, which is a cheap way to catch line noise / floating input.
     if (t < -40.0f || t > 80.0f || h < 0.0f || h > 100.0f) {

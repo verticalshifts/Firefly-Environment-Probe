@@ -46,6 +46,17 @@
         <div class="field"><label for="wifiUsername">Username</label><input id="wifiUsername" name="wifiUsername"></div>
         <div class="field"><label for="wifiEapPassword">Password (leave blank to keep current)</label><input id="wifiEapPassword" name="wifiEapPassword" type="password"></div>
       </div>
+      <div class="field"><label for="wifiTxPowerDbm">Wi-Fi Transmit Power (ESP32)</label>
+        <select id="wifiTxPowerDbm" name="wifiTxPowerDbm">
+          <option value="0">Default (15 dBm)</option>
+          <option value="8">8.5 dBm — lowest, shortest range</option>
+          <option value="11">11 dBm</option>
+          <option value="13">13 dBm</option>
+          <option value="15">15 dBm</option>
+          <option value="17">17 dBm</option>
+          <option value="19">19.5 dBm — highest</option>
+        </select>
+      </div>
       <div class="field"><label for="wifiConnectAttempts">Connect Attempts (before falling back to setup mode)</label><input id="wifiConnectAttempts" name="wifiConnectAttempts" type="number" min="1" max="10"></div>
       <div class="field">
         <label><input type="checkbox" id="useStaticIp" name="useStaticIp" style="width:auto;display:inline-block;"> Use static IP</label>

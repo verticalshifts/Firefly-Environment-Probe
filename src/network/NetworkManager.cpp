@@ -1,5 +1,6 @@
 #include "NetworkManager.h"
 #include "hardware/HardwareConfig.h"
+#include "hardware/Platform.h"
 #include "util/Logger.h"
 
 #if defined(PLATFORM_ESP32)
@@ -26,6 +27,90 @@ extern "C" {
 static const char *TAG = "Network";
 static const byte DNS_PORT = 53;
 
+// ---------------------------------------------------------------------------
+// Disconnect reasons. The Wi-Fi stack reports WHY a link dropped, but only
+// through an event — WiFi.status() just says "not connected". Without this
+// a weak signal, an AP that kicked us and a rejected password all produce
+// the same log line, which is why random drops were undiagnosable.
+//
+// The callback runs on the Wi-Fi/event task (ESP32) or from the SDK
+// (ESP8266), so it only stores a byte and sets a flag; loop() does the
+// logging on the main task.
+// ---------------------------------------------------------------------------
+static volatile uint8_t g_disconnectReason = 0;
+static volatile bool g_disconnectPending = false;
+
+// Reason 8 ("station is leaving") is what our own disconnect-before-scan
+// produces. Recording it would overwrite the reason that actually matters.
+static constexpr uint8_t REASON_SELF_LEAVE = 8;
+
+static void noteDisconnect(uint8_t reason) {
+    if (reason == REASON_SELF_LEAVE) return;
+    g_disconnectReason = reason;
+    g_disconnectPending = true;
+}
+
+#if defined(PLATFORM_ESP8266)
+static WiFiEventHandler g_disconnectHandler; // must outlive the subscription
+#endif
+
+static void registerWifiEvents() {
+    static bool registered = false;
+    if (registered) return;
+    registered = true;
+#if defined(PLATFORM_ESP32)
+    WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) {
+        noteDisconnect(info.wifi_sta_disconnected.reason);
+    }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+#elif defined(PLATFORM_ESP8266)
+    g_disconnectHandler = WiFi.onStationModeDisconnected(
+        [](const WiFiEventStationModeDisconnected &e) { noteDisconnect((uint8_t)e.reason); });
+#endif
+}
+
+// The codes below 200 are standard 802.11 reason codes; 200+ are Espressif's
+// own, shared by both platforms.
+const char *NetworkManager::disconnectReasonText(uint8_t reason) {
+    switch (reason) {
+        case 0:   return "none";
+        case 1:   return "unspecified";
+        case 2:   return "authentication expired";
+        case 3:   return "AP deauthenticated us (it is leaving or restarting)";
+        case 4:   return "AP dropped us for inactivity";
+        case 5:   return "AP is full";
+        case 6:
+        case 7:   return "AP no longer recognises us (it restarted or lost our session)";
+        case 8:   return "we left";
+        case 15:  return "4-way handshake timeout (wrong password, or a very weak link)";
+        case 16:  return "group key update timeout";
+        case 200: return "beacon timeout (AP no longer heard: range, interference or AP down)";
+        case 201: return "no AP found with this SSID";
+        case 202: return "authentication failed";
+        case 203: return "association failed";
+        case 204: return "handshake timeout";
+        case 205: return "connection failed";
+        default:  return "other (see the 802.11 / Espressif reason code)";
+    }
+}
+
+// Applied whenever station mode is (re)entered.
+static void applyStationPolicy() {
+    // One owner for reconnection. The core's own auto-reconnect and loop()'s
+    // attempts would otherwise both issue connects and cancel each other's.
+    WiFi.setAutoReconnect(false);
+
+    // No Wi-Fi power-save. Modem-sleep makes the radio doze between beacons,
+    // which is a known source of dropped links and slow responses with some
+    // access points. This device is mains/USB powered, so the saving is
+    // worth nothing here. Not proven to be the cause of any drop seen so far.
+#if defined(PLATFORM_ESP32)
+    WiFi.setSleep(false);
+#elif defined(PLATFORM_ESP8266)
+    WiFi.setSleepMode(WIFI_NONE_SLEEP);
+#endif
+
+}
+
 // Human-readable WiFi.status() for the "could not join" log line — the bare
 // WARN gave no signal on *why* (wrong password vs. SSID not found/out of
 // range vs. something else), which is exactly the ambiguity that made a
@@ -34,7 +119,7 @@ static const char *wifiStatusString(wl_status_t status) {
     switch (status) {
         case WL_IDLE_STATUS: return "idle (never got past association)";
         case WL_NO_SSID_AVAIL: return "SSID not found — check it's in range and spelled exactly right, and (for a dual-band router) that this device's 2.4GHz-only radio can actually see it";
-        case WL_CONNECT_FAILED: return "connect failed — likely wrong password";
+        case WL_CONNECT_FAILED: return "connect failed";
         case WL_CONNECTION_LOST: return "connection lost mid-handshake";
         case WL_DISCONNECTED: return "disconnected";
 #if defined(PLATFORM_ESP8266)
@@ -78,11 +163,17 @@ String NetworkManager::deriveMdnsHostname() {
 
 void NetworkManager::begin() {
     apSsid_ = deriveApSsid();
+    registerWifiEvents();
 
     if (config_.isProvisioned()) {
         connectSTA(/*blockingFirstAttempt=*/true);
         if (WiFi.status() != WL_CONNECTED) {
+            // The reason code is what the stack actually reported; the status
+            // text alone guessed "likely wrong password" for what was really
+            // an association failure on a marginal link.
             Logger::warn(TAG, "Could not join configured Wi-Fi (" + String(wifiStatusString(WiFi.status())) +
+                                   "; last reason " + String((uint8_t)g_disconnectReason) + ": " +
+                                   disconnectReasonText(g_disconnectReason) +
                                    "), falling back to provisioning AP");
             startProvisioningAP();
         }
@@ -106,6 +197,8 @@ void NetworkManager::connectSTA(bool blockingFirstAttempt) {
     const DeviceConfig &c = config_.get();
     mode_ = NetworkMode::STATION;
     WiFi.mode(WIFI_STA);
+    applyStationPolicy();
+    applyTxPower();
 
     if (c.useStaticIp && c.staticIp.length() > 0) {
         IPAddress ip, gw, sn, dns;
@@ -162,7 +255,45 @@ bool NetworkManager::performConnectAttempt(const DeviceConfig &c, uint32_t maxWa
     // showing up here too (WiFi.begin() below connects by name regardless
     // of scan visibility, so a hidden network that doesn't show up here
     // can still succeed — this is diagnostics/targeting, not a gate).
-    int found = WiFi.scanNetworks(false, true);
+    //
+    // A scan cannot run while the station is still trying to connect — the
+    // driver refuses it and scanNetworks() returns -2 (WIFI_SCAN_FAILED).
+    // That happened on every attempt after the first, and on every "re-scan"
+    // made from loop(), so those attempts never actually scanned: the log
+    // just said "found 0 APs (out of -2 networks seen)". Stop the pending
+    // connect first.
+    if (WiFi.status() != WL_CONNECTED) {
+#if defined(PLATFORM_ESP32)
+        WiFi.disconnect(false, false);
+#elif defined(PLATFORM_ESP8266)
+        // Raw SDK call: ESP8266's WiFi.disconnect() also blanks the stored
+        // SSID/password, which a later WiFi.reconnect() depends on.
+        wifi_station_disconnect();
+#endif
+        delay(100);
+    }
+
+    // Skip the scan for a network that has shown itself to be hidden — see
+    // unseenScans_ in the header.
+    bool skipScan = unseenScans_ >= 2 && (++scanSkipCounter_ % 5 != 0);
+
+    int found = 0;
+    bool scanOk = false;
+    if (skipScan) {
+        Logger::info(TAG, "SSID not visible to scans (hidden?) — joining by name");
+    } else {
+        found = WiFi.scanNetworks(false, true);
+        scanOk = found >= 0;
+        if (!scanOk) {
+            Logger::warn(TAG, "Wi-Fi scan failed (code " + String(found) +
+                                  ") — connecting by name without targeting an AP");
+            found = 0;
+        }
+        // A scan measured ~6.3s on a band with 30 networks. This function
+        // also runs from loop() with the watchdog armed, so it feeds it at
+        // each bounded stage rather than relying on the total staying short.
+        PlatformManager::feedWatchdog();
+    }
     int matches = 0;
     int bestRssi = -1000;
 #if defined(PLATFORM_ESP8266)
@@ -191,7 +322,14 @@ bool NetworkManager::performConnectAttempt(const DeviceConfig &c, uint32_t maxWa
             haveBestBssid = true;
         }
     }
-    if (matches == 0) {
+    if (scanOk) {
+        if (matches == 0) { if (unseenScans_ < 255) unseenScans_++; }
+        else unseenScans_ = 0;
+    }
+
+    if (!scanOk) {
+        // Skipped or failed, and already reported; "0 APs seen" would be false.
+    } else if (matches == 0) {
         Logger::warn(TAG, "Pre-connect scan found 0 APs broadcasting \"" + c.wifiSsid +
                                "\" (out of " + String(found) + " networks seen) — could still be hidden; "
                                "not necessarily just an auth/DHCP problem");
@@ -284,7 +422,8 @@ bool NetworkManager::performConnectAttempt(const DeviceConfig &c, uint32_t maxWa
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < maxWaitMs) {
-        delay(500); // acceptable one-time blocking wait during setup(), not loop()
+        delay(500);
+        PlatformManager::feedWatchdog(); // bounded by maxWaitMs; see the note after the scan
     }
     return WiFi.status() == WL_CONNECTED;
 }
@@ -302,6 +441,35 @@ void NetworkManager::startProvisioningAP() {
     Logger::info(TAG, "Provisioning AP started: " + apSsid_ + " (" + apIP.toString() + ")");
 }
 
+void NetworkManager::applyTxPower() {
+#if defined(PLATFORM_ESP32)
+    // Per-device setting, 15dBm by default. A live A/B on the bench
+    // board (levels alternated minute by minute) showed no link-quality
+    // difference between 7 and 18dBm, so lowering it is not a fix for drops;
+    // it is kept as a knob for boards with a weak supply. The radio rounds
+    // down to the step it supports (19 -> 18, 11 -> 9.5, 8 -> 7 as read back).
+    // Needs the radio started (after WiFi.mode()).
+    uint8_t dbm = config_.get().wifiTxPowerDbm;
+    if (dbm == 0) dbm = hw::WIFI_TX_POWER_DEFAULT_DBM;
+    wifi_power_t level = WIFI_POWER_19_5dBm;
+    if (dbm <= 8) level = WIFI_POWER_8_5dBm;
+    else if (dbm <= 11) level = WIFI_POWER_11dBm;
+    else if (dbm <= 13) level = WIFI_POWER_13dBm;
+    else if (dbm <= 15) level = WIFI_POWER_15dBm;
+    else if (dbm <= 17) level = WIFI_POWER_17dBm;
+    const bool ok = WiFi.setTxPower(level);
+    Logger::info(TAG, String("TX power ") + String(level / 4.0f, 1) + "dBm: " + (ok ? "ok" : "FAILED"));
+#endif
+}
+
+float NetworkManager::getTxPowerDbm() {
+#if defined(PLATFORM_ESP32)
+    return WiFi.getTxPower() / 4.0f;
+#else
+    return 0;
+#endif
+}
+
 void NetworkManager::applyNewCredentials() {
     Logger::info(TAG, "Applying new Wi-Fi credentials");
     dnsServer_.stop();
@@ -313,6 +481,13 @@ void NetworkManager::applyNewCredentials() {
 }
 
 void NetworkManager::loop() {
+    if (g_disconnectPending) {
+        g_disconnectPending = false;
+        lastDisconnectReason_ = g_disconnectReason;
+        Logger::warn(TAG, "Wi-Fi disconnect reason " + String(lastDisconnectReason_) + ": " +
+                              disconnectReasonText(lastDisconnectReason_));
+    }
+
     if (mode_ == NetworkMode::PROVISIONING_AP) {
         dnsServer_.processNextRequest();
         retryConfiguredNetworkFromAP();
@@ -326,7 +501,14 @@ void NetworkManager::loop() {
 #endif
 
     if (WiFi.status() == WL_CONNECTED) {
-        reconnectFailures_ = 0; // the streak only counts consecutive failures
+        if (disconnectedSinceMs_ != 0) {
+            Logger::info(TAG, "Wi-Fi back after " + String((millis() - disconnectedSinceMs_) / 1000) +
+                                  "s and " + String(reconnectFailures_) + " attempt(s): IP " +
+                                  WiFi.localIP().toString() + ", ch " + String(WiFi.channel()) +
+                                  ", " + String(WiFi.RSSI()) + "dBm");
+            disconnectedSinceMs_ = 0;
+        }
+        reconnectFailures_ = 0;
         if (!everConnected_) {
             everConnected_ = true;
             setupMDNS();
@@ -334,40 +516,42 @@ void NetworkManager::loop() {
         return;
     }
 
-    {
-        unsigned long now = millis();
-        // Backoff: retry every 5s rather than hammering WiFi.reconnect().
-        // WiFi.reconnect() just disconnects+reconnects against whatever
-        // station config/Enterprise state is already latched in the SDK —
-        // it doesn't re-run performConnectAttempt()'s branch above. This is
-        // confirmed correct for ESP32 (WiFiSTA.cpp) and for ESP8266's own
-        // reconnect() (ESP8266WiFiSTA.cpp: wifi_station_disconnect() +
-        // wifi_station_connect(), same calls the enterprise branch above
-        // uses directly) — but that the raw enterprise state actually
-        // *stays* latched across a disconnect/connect cycle on ESP8266 is
-        // an assumption from the community pattern, not something the SDK
-        // headers document; unverified on real ESP8266 hardware this session.
-        if (now - lastConnectAttemptMs_ >= 5000) {
-            lastConnectAttemptMs_ = now;
-            reconnectCount_++;
+    // ---- Link is down ----
+    unsigned long now = millis();
+    if (disconnectedSinceMs_ == 0) {
+        disconnectedSinceMs_ = now ? now : 1;
+        reconnectFailures_ = 0;
+        lastConnectAttemptMs_ = 0; // act on the first loop pass, don't wait out an interval
+        Logger::warn(TAG, "Wi-Fi link is down");
+    }
 
-            if (++reconnectFailures_ >= RESCAN_AFTER_FAILURES) {
-                // reconnect() has had its chance. It reuses the BSSID and
-                // channel latched at the last successful connect, so if the
-                // AP returned on a different channel — or another AP in the
-                // same ESS is the reachable one now — it will never succeed,
-                // however long we retry. A full attempt re-scans and re-picks
-                // the strongest matching AP. Bounded (scan + AP_RETRY_WAIT_MS)
-                // so it stays well inside the watchdog window.
-                reconnectFailures_ = 0;
-                Logger::warn(TAG, "Reconnect not succeeding, re-scanning for \"" +
-                                      config_.get().wifiSsid + "\"");
-                performConnectAttempt(config_.get(), AP_RETRY_WAIT_MS);
-            } else {
-                Logger::warn(TAG, "Wi-Fi disconnected, attempting reconnect");
-                WiFi.reconnect();
-            }
-        }
+    if (now - disconnectedSinceMs_ >= STUCK_RESTART_MS) {
+        Logger::error(TAG, "Offline for " + String(STUCK_RESTART_MS / 60000) + " min despite " +
+                               String(reconnectFailures_) + " attempts — restarting");
+        delay(200); // let the line reach the serial port
+        PlatformManager::restart();
+    }
+
+    if (lastConnectAttemptMs_ != 0 && now - lastConnectAttemptMs_ < RECONNECT_INTERVAL_MS) return;
+    lastConnectAttemptMs_ = now;
+    reconnectCount_++;
+
+    if (reconnectFailures_++ == 0) {
+        // First response to a drop: the cheap path. reconnect() re-uses the
+        // AP and channel from the last successful connect, which is right
+        // for a momentary blip.
+        Logger::warn(TAG, "Attempting reconnect to the same AP");
+        WiFi.reconnect();
+    } else {
+        // That didn't hold. Every later attempt is a full one: stop the
+        // pending connect, scan, and target the strongest AP carrying this
+        // SSID — the AP may have moved channel, or a different AP in the
+        // same network may be the reachable one now. maxWaitMs = 0 so the
+        // attempt is started and left to run; the RECONNECT_INTERVAL_MS gap
+        // before the next one is what gives it time to complete.
+        Logger::warn(TAG, "Still offline (" + String((now - disconnectedSinceMs_) / 1000) +
+                              "s) — re-scanning, attempt " + String(reconnectFailures_));
+        performConnectAttempt(config_.get(), 0);
     }
 }
 
@@ -394,6 +578,8 @@ void NetworkManager::retryConfiguredNetworkFromAP() {
 
     dnsServer_.stop();
     WiFi.mode(WIFI_STA);
+    applyStationPolicy();
+    applyTxPower();
 
     // ONE bounded attempt, not connectSTA()'s full ~60s budget: this runs
     // inside loop() with the watchdog armed, unlike the boot-time connect.
@@ -401,6 +587,7 @@ void NetworkManager::retryConfiguredNetworkFromAP() {
         mode_ = NetworkMode::STATION;
         everConnected_ = true;
         reconnectFailures_ = 0;
+        disconnectedSinceMs_ = 0;
         lastConnectAttemptMs_ = millis();
         Logger::info(TAG, "Rejoined " + c.wifiSsid + " (" + WiFi.localIP().toString() +
                               "), leaving provisioning AP");

@@ -277,14 +277,63 @@ during an outage sat in setup mode forever, even once the network returned.
 one bounded `performConnectAttempt()` rather than the full ~60s budget
 (this runs inside `loop()` with the watchdog armed, unlike the boot path). It
 skips the retry entirely while a client is associated with the AP, so it
-can't yank the portal away from someone mid-provisioning.
+can't yank the portal away from someone mid-provisioning. Each retry feeds
+the watchdog at its bounded stages: a scan was measured at ~6.3s on a band
+with 30 networks, which with the 8s join wait is close to the 15s limit.
 
-**Reconnects re-scan rather than retry blind.** `WiFi.reconnect()` reuses the
-BSSID and channel latched at the last successful connect. Observed live: the
-same ESS moved between channels 3, 4 and 10 across boots, and it has two APs.
-If the pinned one isn't there when the network returns, `reconnect()` can
-never succeed. After `RESCAN_AFTER_FAILURES` consecutive failures (~30s), the
-device does a full scan and re-targets the strongest matching AP instead.
+**One owner for reconnection, and attempts get time to finish.** `loop()`
+used to call `WiFi.reconnect()` every 5s. Each call tears down the attempt in
+progress, and a join plus DHCP can take longer than 5s on a weak or busy
+link, so the device could cancel its own attempts indefinitely; the core's
+auto-reconnect was also left on, issuing connects of its own. Now the core's
+auto-reconnect is off, the first response to a drop is a plain `reconnect()`
+(right for a blip), and every later attempt — 15s apart — is a full one that
+is started and then left to run.
+
+**A scan needs the station idle.** `scanNetworks()` returns `-2`
+(`WIFI_SCAN_FAILED`) while a connect is pending. Every attempt after the
+first, and every re-scan made from `loop()`, hit that, so the "re-scan and
+target the strongest AP" path never actually scanned. The pending connect is
+now stopped first.
+
+**Hidden SSIDs skip the pointless scan.** A hidden network can be joined by
+name but never appears in a scan, so it can't be ranked or targeted. Once two
+scans in a row have not listed the configured SSID, the ~6s app-level scan is
+skipped (re-checked every 5th attempt). Switching the driver to
+`WIFI_ALL_CHANNEL_SCAN` sorted by signal was tried for this case and removed:
+a test on a hidden-SSID network showed no benefit.
+
+**Wi-Fi power-save is off** (`WiFi.setSleep(false)` / `WIFI_NONE_SLEEP`).
+The device is USB-powered, and modem-sleep is a known source of dropped
+links with some access points. This is a precaution: no drop observed so far
+has been traced to it.
+
+**Disconnect reasons are recorded.** The stack only reports why a link
+dropped through an event. `NetworkManager` now captures the reason code, logs
+it with a plain-language reading, and exposes it as
+`wifi.lastDisconnectReason` / `wifi.lastDisconnectText` in `/api/network`.
+Reason 8 (our own disconnect-before-scan) is ignored so it cannot overwrite
+the reason that matters.
+
+**Transmit power is capped at 15dBm by default (ESP32)** and is a per-device
+setting, `wifiTxPowerDbm`, applied live. A minute-by-minute A/B on a bench
+board showed no link-quality difference between 7 and 18dBm, so this is a
+knob for boards with a weak supply or a long reach, not a fix for drops. The
+radio rounds down to the step it supports; the live value is `wifi.txPowerDbm`
+in `/api/network`.
+
+**Outbound publishes are time-bounded (ESP32).** `HTTPClient::setTimeout()`
+covers reads only, so the TCP connect and TLS handshake of a GEN2, monitor-sync
+or IoT Gateway request were unbounded; on a degraded link one publish was
+measured blocking `loop()` — and the web UI with it — for 93s. They are now
+limited by `hw::HTTP_CONNECT_TIMEOUT_MS` and `hw::TLS_HANDSHAKE_TIMEOUT_S`.
+
+**Last resort: restart after 10 minutes offline.** Observed live: a device
+that had failed every reconnect for over a minute joined the same AP at once
+after a power cycle. If station mode has been down for `STUCK_RESTART_MS`
+despite the attempts above, the device restarts. This cannot loop: a restart
+during a real outage ends in the provisioning AP, which keeps retrying on its
+own timer.
 
 **The watchdog is fed between blocking steps.** `feedWatchdog()` used to run
 only at the top of `loop()`. During an outage the GEN2 POST, monitor beacons,

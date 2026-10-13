@@ -354,6 +354,12 @@ void WebServerManager::handleApiNetwork() {
     wifi += "\"channel\":" + String(network_.getChannel()) + ",";
     wifi += String("\"connected\":") + (network_.isConnected() ? "true" : "false") + ",";
     wifi += "\"reconnectCount\":" + String(network_.getReconnectCount()) + ",";
+    // Why the link last dropped, so a random disconnect can be explained
+    // after the fact rather than only from a serial log.
+    wifi += "\"txPowerDbm\":" + String(network_.getTxPowerDbm(), 1) + ",";
+    wifi += "\"lastDisconnectReason\":" + String(network_.getLastDisconnectReason()) + ",";
+    wifi += "\"lastDisconnectText\":\"" +
+            jsonEscape(NetworkManager::disconnectReasonText(network_.getLastDisconnectReason())) + "\",";
     wifi += String("\"provisioning\":") + (network_.isProvisioning() ? "true" : "false") + ",";
     wifi += "\"apSsid\":\"" + jsonEscape(network_.getApSSID()) + "\"";
     wifi += "},\"probes\":[";
@@ -466,6 +472,7 @@ void WebServerManager::handleApiConfigPost() {
 
     if (sensorChanged) environment_.reconfigure();
     if (wifiChanged) network_.applyNewCredentials();
+    else if (doc["wifiTxPowerDbm"].is<unsigned int>()) network_.applyTxPower();
 }
 
 void WebServerManager::handleApiRestart() {

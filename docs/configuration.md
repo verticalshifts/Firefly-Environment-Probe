@@ -32,6 +32,7 @@ mismatch.
 | `useStaticIp` | bool | `false` | |
 | `staticIp` / `staticGateway` / `staticSubnet` / `staticDns` | string | `""` / `""` / `"255.255.255.0"` / `""` | Only used when `useStaticIp` is true |
 | `wifiConnectAttempts` | int | `3` | Full connect attempts (fresh scan + `WiFi.begin()` each, not polls of one attempt), spread across a fixed ~60s total budget, before falling back to provisioning AP; validated to 1–10 |
+| `wifiTxPowerDbm` | int | `0` | ESP32 Wi-Fi transmit power in dBm: `0` = firmware default (15), or 8–19 (the radio rounds down to a supported step). Applied live. Ignored on ESP8266 |
 | `authUsername` | string | `"admin"` | Dashboard Basic Auth username |
 | `authPassword` | string | *(auto-generated on first boot)* | Never returned by `GET /api/config`; see `/api/provisioning-info` |
 | `mdnsHostname` | string | `""` | Blank = slugified `deviceName` |
@@ -271,6 +272,7 @@ cleanly.
 - `otaCheckIntervalS` is outside 300–604800s
 - `wifiSsid` is longer than 32 bytes (a hard 802.11 protocol limit)
 - `wifiConnectAttempts` is outside 1–10
+- `wifiTxPowerDbm` is neither 0 nor within 8–19
 - `wifiAuthMode` isn't exactly `"personal"` or `"enterprise"`
 - `wifiAuthMode` is `"enterprise"` and `wifiUsername` would be left empty
   (while `wifiSsid` is non-empty)

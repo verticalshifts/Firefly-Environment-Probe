@@ -1,5 +1,6 @@
 #include "Gen2MonitorSync.h"
 #include "util/Logger.h"
+#include "hardware/HardwareConfig.h"
 
 #if defined(PLATFORM_ESP32)
 #include <HTTPClient.h>
@@ -77,6 +78,9 @@ bool Gen2MonitorSync::pollOnce() {
 
     HTTPClient http;
     http.setTimeout(c.probeTimeoutMs);
+#if defined(PLATFORM_ESP32)
+    http.setConnectTimeout(hw::HTTP_CONNECT_TIMEOUT_MS); // see hw:: comment
+#endif
 
     WiFiClient plain;
     SecureClient secure;
@@ -86,6 +90,9 @@ bool Gen2MonitorSync::pollOnce() {
         // Same setInsecure() trade-off as Gen2Telemetry — see its header for
         // why the certificate chain isn't verified on this hardware.
         secure.setInsecure();
+#if defined(PLATFORM_ESP32)
+        secure.setHandshakeTimeout(hw::TLS_HANDSHAKE_TIMEOUT_S);
+#endif
         begun = http.begin(secure, url);
     } else {
         begun = http.begin(plain, url);
@@ -220,6 +227,9 @@ bool Gen2MonitorSync::ackJob(const String &jobId) {
 
     HTTPClient http;
     http.setTimeout(c.probeTimeoutMs);
+#if defined(PLATFORM_ESP32)
+    http.setConnectTimeout(hw::HTTP_CONNECT_TIMEOUT_MS); // see hw:: comment
+#endif
 
     WiFiClient plain;
     SecureClient secure;
@@ -227,6 +237,9 @@ bool Gen2MonitorSync::ackJob(const String &jobId) {
     bool begun;
     if (https) {
         secure.setInsecure();
+#if defined(PLATFORM_ESP32)
+        secure.setHandshakeTimeout(hw::TLS_HANDSHAKE_TIMEOUT_S);
+#endif
         begun = http.begin(secure, url);
     } else {
         begun = http.begin(plain, url);

@@ -5,7 +5,7 @@ const numericFields = new Set([
   "tempHighC", "tempLowC", "humidityHighPct", "humidityLowPct",
   "latencyHighMs", "packetLossHighPct", "gen2IntervalS", "gen2SyncIntervalS",
   "iotgwIntervalS", "otaCheckIntervalS",
-  "wifiConnectAttempts",
+  "wifiConnectAttempts", "wifiTxPowerDbm",
 ]);
 
 // ---------------------------------------------------------------------------

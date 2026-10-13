@@ -1,5 +1,6 @@
 #include "Gen2Telemetry.h"
 #include "util/Logger.h"
+#include "hardware/HardwareConfig.h"
 #include <ArduinoJson.h>
 
 #if defined(PLATFORM_ESP32)
@@ -124,6 +125,9 @@ bool Gen2Telemetry::postEnvironment(const EnvironmentReading &reading) {
 
     HTTPClient http;
     http.setTimeout(c.probeTimeoutMs);
+#if defined(PLATFORM_ESP32)
+    http.setConnectTimeout(hw::HTTP_CONNECT_TIMEOUT_MS); // see hw:: comment
+#endif
 
     SecureClient client;
     // setInsecure(): deliberately not certificate-verified, despite this POST
@@ -135,6 +139,9 @@ bool Gen2Telemetry::postEnvironment(const EnvironmentReading &reading) {
     // chain validation entirely, cutting the handshake to a small fraction
     // of that.
     client.setInsecure();
+#if defined(PLATFORM_ESP32)
+    client.setHandshakeTimeout(hw::TLS_HANDSHAKE_TIMEOUT_S);
+#endif
 
 #if defined(PLATFORM_ESP8266)
     // ESP8266 has very little free heap (as little as ~25KB observed on this
@@ -257,9 +264,15 @@ bool Gen2Telemetry::postMonitor(const NetworkProbeResult &r) {
 
     HTTPClient http;
     http.setTimeout(c.probeTimeoutMs);
+#if defined(PLATFORM_ESP32)
+    http.setConnectTimeout(hw::HTTP_CONNECT_TIMEOUT_MS); // see hw:: comment
+#endif
 
     SecureClient client;
     client.setInsecure(); // same trade-off as postEnvironment — see the header
+#if defined(PLATFORM_ESP32)
+    client.setHandshakeTimeout(hw::TLS_HANDSHAKE_TIMEOUT_S);
+#endif
 
     String host = extractHost(c.gen2ServerUrl);
 #if defined(PLATFORM_ESP8266)

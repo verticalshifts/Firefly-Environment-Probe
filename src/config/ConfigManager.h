@@ -103,6 +103,10 @@ struct DeviceConfig {
     // a device can sync its monitor list without publishing readings, or the
     // reverse. Needs gen2LicenseKey + gen2OrgId either way.
     bool gen2SyncEnabled = false;
+    // ESP32 Wi-Fi transmit power in dBm (8, 11, 13, 15, 17 or 19).
+    // 0 means hw::WIFI_TX_POWER_DEFAULT_DBM.
+    // Applied live, no reconnect needed. Ignored on ESP8266.
+    uint8_t wifiTxPowerDbm = 0;
     uint32_t gen2SyncIntervalS = 120;
     // Publish each monitor's own status to GEN2 as a named beacon, which is
     // what makes a locally-added monitor appear on GEN2's dashboard — and

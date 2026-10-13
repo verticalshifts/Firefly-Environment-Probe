@@ -53,18 +53,7 @@
       </div>
       <p class="hint">GPIO number, not the board's silkscreen "D" label (e.g. NodeMCU's D2 is GPIO4). Leave blank for the platform default. See docs/hardware.md for safe GPIOs.</p>
 
-      <details>
-        <summary class="hint" style="cursor:pointer;">Advanced network probe settings</summary>
-        <div class="field" style="margin-top:12px;"><label for="gatewayTarget">Gateway (blank = use DHCP gateway)</label><input id="gatewayTarget" name="gatewayTarget"></div>
-        <div class="field-row">
-          <div class="field"><label for="pingTarget1">Probe Target 1</label><input id="pingTarget1" name="pingTarget1" placeholder="8.8.8.8"></div>
-          <div class="field"><label for="pingTarget2">Probe Target 2</label><input id="pingTarget2" name="pingTarget2" placeholder="1.1.1.1"></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label for="dnsDomain">DNS Domain</label><input id="dnsDomain" name="dnsDomain" placeholder="google.com"></div>
-          <div class="field"><label for="httpTarget">HTTP/HTTPS URL</label><input id="httpTarget" name="httpTarget" placeholder="https://example.com"></div>
-        </div>
-      </details>
+      <p class="hint">Network monitors, GEN2 and the IoT Gateway are configured in Settings once the device has joined your network.</p>
 
       <button type="submit" class="primary">Connect</button>
       <p class="hint" id="formStatus">&nbsp;</p>

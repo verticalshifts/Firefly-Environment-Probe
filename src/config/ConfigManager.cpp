@@ -128,6 +128,7 @@ void ConfigManager::fromJson(JsonDocument &doc) {
     c.gen2MonitorName = doc["gen2MonitorName"] | c.gen2MonitorName;
     c.gen2IntervalS = doc["gen2IntervalS"] | c.gen2IntervalS;
     c.gen2SyncEnabled = doc["gen2SyncEnabled"] | c.gen2SyncEnabled;
+    c.wifiTxPowerDbm = doc["wifiTxPowerDbm"] | c.wifiTxPowerDbm;
     c.gen2SyncIntervalS = doc["gen2SyncIntervalS"] | c.gen2SyncIntervalS;
     c.gen2PublishMonitors = doc["gen2PublishMonitors"] | c.gen2PublishMonitors;
 
@@ -246,6 +247,7 @@ void ConfigManager::toJson(JsonDocument &doc, bool redactSecrets) const {
     doc["gen2IntervalS"] = c.gen2IntervalS;
     doc["gen2SyncEnabled"] = c.gen2SyncEnabled;
     doc["gen2SyncIntervalS"] = c.gen2SyncIntervalS;
+    doc["wifiTxPowerDbm"] = c.wifiTxPowerDbm;
     doc["gen2PublishMonitors"] = c.gen2PublishMonitors;
 
     doc["iotgwEnabled"] = c.iotgwEnabled;
@@ -308,6 +310,10 @@ bool ConfigManager::validate(const DeviceConfig &c, String &errorOut) const {
     }
     if (c.gen2ServerUrl.length() == 0) {
         errorOut = "gen2ServerUrl cannot be empty";
+        return false;
+    }
+    if (c.wifiTxPowerDbm != 0 && (c.wifiTxPowerDbm < 8 || c.wifiTxPowerDbm > 19)) {
+        errorOut = "wifiTxPowerDbm out of range (0 = default, or 8-19)";
         return false;
     }
     if (c.gen2SyncIntervalS < 30 || c.gen2SyncIntervalS > 3600) {
@@ -490,6 +496,7 @@ bool ConfigManager::update(JsonObjectConst updates, String &errorOut) {
     if (updates["gen2MonitorName"].is<const char *>()) c.gen2MonitorName = updates["gen2MonitorName"].as<String>();
     if (updates["gen2IntervalS"].is<unsigned int>()) c.gen2IntervalS = updates["gen2IntervalS"];
     if (updates["gen2SyncEnabled"].is<bool>()) c.gen2SyncEnabled = updates["gen2SyncEnabled"];
+    if (updates["wifiTxPowerDbm"].is<unsigned int>()) c.wifiTxPowerDbm = updates["wifiTxPowerDbm"];
     if (updates["gen2SyncIntervalS"].is<unsigned int>()) c.gen2SyncIntervalS = updates["gen2SyncIntervalS"];
     if (updates["gen2PublishMonitors"].is<bool>()) c.gen2PublishMonitors = updates["gen2PublishMonitors"];
 

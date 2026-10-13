@@ -101,6 +101,13 @@ No auth.
 Each probe's `status` is `UP | DEGRADED | DOWN | OFFLINE` (`OFFLINE` = never
 run yet, e.g. right after boot).
 
+`wifi` also carries `lastDisconnectReason` (the 802.11 / Espressif reason code
+for the most recent link loss, `0` if none since boot) and
+`lastDisconnectText` (a short reading of it, e.g. `"beacon timeout (AP no
+longer heard: range, interference or AP down)"`). They exist so a random drop
+can be explained afterwards without a serial log. `txPowerDbm` is the radio's
+actual transmit power (ESP32; `0.0` on ESP8266).
+
 The `probes` array is now the user's configured monitor list, not a fixed
 five, so it can have any length from 0 to `MAX_MONITORS` (12 on ESP32, 6 on
 ESP8266). Each entry carries three extra fields alongside those shown above:

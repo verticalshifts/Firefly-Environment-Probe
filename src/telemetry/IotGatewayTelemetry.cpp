@@ -1,5 +1,6 @@
 #include "IotGatewayTelemetry.h"
 #include "util/Logger.h"
+#include "hardware/HardwareConfig.h"
 #include <ArduinoJson.h>
 
 #if defined(PLATFORM_ESP32)
@@ -47,6 +48,9 @@ bool IotGatewayTelemetry::postEnvironment(const EnvironmentReading &reading) {
 
     HTTPClient http;
     http.setTimeout(c.probeTimeoutMs);
+#if defined(PLATFORM_ESP32)
+    http.setConnectTimeout(hw::HTTP_CONNECT_TIMEOUT_MS); // see hw:: comment
+#endif
 
     WiFiClient plainClient;
     SecureClient secureClient;
@@ -54,6 +58,9 @@ bool IotGatewayTelemetry::postEnvironment(const EnvironmentReading &reading) {
     bool begun;
     if (https) {
         secureClient.setInsecure(); // see header: same trade-off as Gen2Telemetry
+#if defined(PLATFORM_ESP32)
+        secureClient.setHandshakeTimeout(hw::TLS_HANDSHAKE_TIMEOUT_S);
+#endif
         begun = http.begin(secureClient, c.iotgwUrl);
     } else {
         begun = http.begin(plainClient, c.iotgwUrl);
