@@ -7,17 +7,18 @@ async function loadEnv() {
   // there is genuinely nothing to show (sensor faulted, or not read yet).
   const sensorErrored = env.status === "SENSOR_ERROR";
   const noReading = sensorErrored || env.status === "OFFLINE";
+  const th = Gauge.thresholds(env.thresholds);
   Gauge.render(document.getElementById("gaugeTemp"), {
     value: noReading ? null : env.temperature,
     errored: sensorErrored,
-    min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
+    ...th.temp, unit: "°C", decimals: 1,
     label: "Temperature", icon: "thermometer", accent: "blue",
     title: "Temperature", subtitle: "Current Reading",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
     value: noReading ? null : env.humidity,
     errored: sensorErrored,
-    min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
+    ...th.hum, unit: "%RH", decimals: 0,
     label: "Humidity", icon: "droplet", accent: "teal",
     title: "Humidity", subtitle: "Current Reading",
   });

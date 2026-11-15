@@ -37,7 +37,8 @@ No auth. Combined snapshot for the dashboard header.
     "temperature": 27.4,
     "humidity": 63.2,
     "sensorType": "DHT22",
-    "status": "HEALTHY"
+    "status": "HEALTHY",
+    "thresholds": { "tempHighC": 35, "tempLowC": 10, "humidityHighPct": 80, "humidityLowPct": 30 }
   },
   "network": {
     "connected": true,
@@ -54,6 +55,8 @@ No auth. Combined snapshot for the dashboard header.
 `HEALTHY | WARNING | CRITICAL | OFFLINE | SENSOR_ERROR` — computed
 server-side from the configured thresholds, so the dashboard never
 hard-codes them (see [architecture.md](architecture.md)).
+`environment.thresholds` carries those same four alert thresholds, so the
+dashboard dials can show the configured ideal range without the login.
 
 ## GET /api/environment
 

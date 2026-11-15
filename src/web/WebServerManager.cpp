@@ -300,6 +300,14 @@ void WebServerManager::handleApiStatus() {
     environment["humidity"] = env.humidity;
     environment["sensorType"] = environment_.sensorType();
     environment["status"] = classifyEnvironment(env, environment_.status(), c);
+    // The dashboard dials draw their "Ideal Range" and Low/Comfortable/High
+    // label from these, so they always agree with the alert status above.
+    // Same four values /api/environment already exposes unauthenticated.
+    JsonObject thresholds = environment["thresholds"].to<JsonObject>();
+    thresholds["tempHighC"] = c.tempHighC;
+    thresholds["tempLowC"] = c.tempLowC;
+    thresholds["humidityHighPct"] = c.humidityHighPct;
+    thresholds["humidityLowPct"] = c.humidityLowPct;
 
     JsonObject network = doc["network"].to<JsonObject>();
     network["connected"] = network_.isConnected();

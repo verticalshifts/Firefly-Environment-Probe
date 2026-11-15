@@ -14,17 +14,18 @@ async function loadOnce() {
   const envStatus = status.environment.status;
   const sensorErrored = envStatus === "SENSOR_ERROR";
   const noReading = sensorErrored || envStatus === "OFFLINE";
+  const th = Gauge.thresholds(status.environment.thresholds);
   Gauge.render(document.getElementById("gaugeTemp"), {
     value: noReading ? null : status.environment.temperature,
     errored: sensorErrored,
-    min: 0, max: 45, low: 10, high: 35, unit: "°C", decimals: 1,
+    ...th.temp, unit: "°C", decimals: 1,
     label: "Temperature", icon: "thermometer", accent: "blue",
     title: "Temperature", subtitle: "Ambient Temperature",
   });
   Gauge.render(document.getElementById("gaugeHum"), {
     value: noReading ? null : status.environment.humidity,
     errored: sensorErrored,
-    min: 0, max: 100, low: 30, high: 80, unit: "%RH", decimals: 0,
+    ...th.hum, unit: "%RH", decimals: 0,
     label: "Humidity", icon: "droplet", accent: "teal",
     title: "Humidity", subtitle: "Relative Humidity",
   });

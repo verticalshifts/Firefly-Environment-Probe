@@ -8,12 +8,13 @@
 // footer row and keeping both in one place avoids duplicating icon markup
 // across every page that renders a gauge.
 //
-// Zone thresholds (low/high) are visual comfort bands, not read live from
-// device config — the dashboard's read-only views are unauthenticated by
-// design (see docs/architecture.md's Auth model) and alert thresholds live
-// behind /api/config, which is. Defaults passed in by callers mirror
-// ConfigManager's own defaults (tempLowC/tempHighC/humidityLowPct/
-// humidityHighPct) so they match out of the box.
+// Zone thresholds (low/high) come from the device's alert thresholds, which
+// /api/status and /api/environment both expose without auth (the four
+// numbers only — the rest of /api/config stays behind the login). Callers
+// pass them through Gauge.thresholds(), so the "Ideal Range" text and the
+// Low/Comfortable/High label always agree with the status the device itself
+// reports. Older firmware that doesn't send them falls back to
+// ConfigManager's own defaults.
 
 const Gauge = (() => {
   const CX = 100, CY = 100, R = 80, NEEDLE_R = 62, BAND_WIDTH = 14;
@@ -199,5 +200,24 @@ const Gauge = (() => {
     if (label) container.querySelector("svg.gauge").setAttribute("aria-label", label + ": " + Number(value).toFixed(decimals) + (unit || ""));
   }
 
-  return { render, iconSvg };
+  // Mirrors ConfigManager's defaults; used only when the device response has
+  // no thresholds object (firmware older than this dashboard).
+  const DEFAULT_THRESHOLDS = { tempLowC: 10, tempHighC: 35, humidityLowPct: 30, humidityHighPct: 80 };
+
+  // Returns the gauge options derived from a thresholds object: the comfort
+  // band, plus a temperature scale stretched so a custom band still sits
+  // inside the dial (default scale 0-45 °C).
+  function thresholds(t) {
+    const th = Object.assign({}, DEFAULT_THRESHOLDS, t || {});
+    return {
+      temp: {
+        low: th.tempLowC, high: th.tempHighC,
+        min: Math.min(0, Math.floor(th.tempLowC - 5)),
+        max: Math.max(45, Math.ceil(th.tempHighC + 5)),
+      },
+      hum: { low: th.humidityLowPct, high: th.humidityHighPct, min: 0, max: 100 },
+    };
+  }
+
+  return { render, iconSvg, thresholds };
 })();
